@@ -1,0 +1,28 @@
+{
+    "name": "solarized-dark",
+    "display_name": "Solarized Dark",
+    "mode": "dark",
+    "icon": "\uf186",
+    "colors": {
+        "bg": "#002b36",
+        "surface": "#073642",
+        "surface_high": "#0e4754",
+        "surface_higher": "#155866",
+        "outline": "#586e75",
+        "text": "#eee8d5",
+        "text_muted": "#93a1a1",
+        "primary": "#268bd2",
+        "primary_container": "#1c5a86",
+        "on_primary": "#fdf6e3",
+        "accent_container": "#2aa198",
+        "hypr_active_border": "#268bd2",
+        "hypr_inactive_border": "#586e75",
+        "shadow": "#001015",
+        "groupbar_active": "#1c5a86",
+        "groupbar_inactive": "#04222a",
+        "groupbar_locked_active": "#2a74ad",
+        "groupbar_locked_inactive": "#0a3c49",
+        "groupbar_text_active": "#fdf6e3",
+        "groupbar_text_inactive": "#93a1a1"
+    }
+}

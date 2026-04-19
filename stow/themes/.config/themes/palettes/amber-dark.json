@@ -1,0 +1,28 @@
+{
+    "name": "amber-dark",
+    "display_name": "Amber Dark",
+    "mode": "dark",
+    "icon": "\uf186",
+    "colors": {
+        "bg": "#0f0e0c",
+        "surface": "#161412",
+        "surface_high": "#211d19",
+        "surface_higher": "#2c2621",
+        "outline": "#4a3d31",
+        "text": "#eee1cc",
+        "text_muted": "#c8b79f",
+        "primary": "#cb7e2c",
+        "primary_container": "#5a3815",
+        "on_primary": "#fff1de",
+        "accent_container": "#6f431a",
+        "hypr_active_border": "#c97a2b",
+        "hypr_inactive_border": "#3a3028",
+        "shadow": "#1a1a1a",
+        "groupbar_active": "#5a3815",
+        "groupbar_inactive": "#1a1714",
+        "groupbar_locked_active": "#7a4a1f",
+        "groupbar_locked_inactive": "#2b2520",
+        "groupbar_text_active": "#f2e8d8",
+        "groupbar_text_inactive": "#c7b79d"
+    }
+}

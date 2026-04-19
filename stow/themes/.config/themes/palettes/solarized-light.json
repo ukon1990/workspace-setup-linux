@@ -1,0 +1,28 @@
+{
+    "name": "solarized-light",
+    "display_name": "Solarized Light",
+    "mode": "light",
+    "icon": "\uf185",
+    "colors": {
+        "bg": "#fdf6e3",
+        "surface": "#eee8d5",
+        "surface_high": "#e3dcc5",
+        "surface_higher": "#d5cdb4",
+        "outline": "#93a1a1",
+        "text": "#073642",
+        "text_muted": "#586e75",
+        "primary": "#268bd2",
+        "primary_container": "#b3d7f0",
+        "on_primary": "#002b36",
+        "accent_container": "#cb4b16",
+        "hypr_active_border": "#268bd2",
+        "hypr_inactive_border": "#93a1a1",
+        "shadow": "#657b83",
+        "groupbar_active": "#b3d7f0",
+        "groupbar_inactive": "#e3dcc5",
+        "groupbar_locked_active": "#8cc1e6",
+        "groupbar_locked_inactive": "#d5cdb4",
+        "groupbar_text_active": "#002b36",
+        "groupbar_text_inactive": "#586e75"
+    }
+}

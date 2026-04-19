@@ -1,0 +1,8 @@
+# Base tools for bootstrapping the repo
+# Keep this small and broadly useful.
+git
+curl
+stow
+unzip
+zip
+yay

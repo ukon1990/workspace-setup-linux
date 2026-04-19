@@ -1,0 +1,2 @@
+# Flatpak apps (optional)
+# Add app IDs here if you later want Flatpak-managed apps.

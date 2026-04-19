@@ -1,0 +1,22 @@
+# Packages needed for the Hyprland desktop setup
+# Based on what I actually installed manually + the config dependencies.
+hyprland
+hyprpaper
+waybar
+mako
+lxqt-policykit
+hyprsunset
+hyprpolkitagent
+kitty
+dolphin
+sherlock
+sherlock-launcher-bin
+wl-clipboard
+playerctl
+pavucontrol
+xdg-desktop-portal-hyprland
+gnome-keyring
+xorg-xwayland
+pipewire
+pipewire-pulse
+wireplumber

@@ -1,0 +1,13 @@
+[Unit]
+Description=LXQt PolicyKit authentication agent
+PartOf=graphical-session.target
+After=graphical-session.target dbus.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/lxqt-policykit-agent
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,9 @@
+# Daily apps I install by hand after the desktop is ready
+vivaldi
+discord
+lutris
+steam
+github-cli
+podman
+podman-desktop
+anyrun

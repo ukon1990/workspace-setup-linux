@@ -1,0 +1,173 @@
+{
+    "layer": "top",
+    "position": "top",
+    "height": 40,
+    "spacing": 10,
+    "margin-top": 8,
+    "margin-left": 12,
+    "margin-right": 12,
+
+    "modules-left": [
+        "hyprland/workspaces",
+        "hyprland/window"
+    ],
+    "modules-center": [
+        "custom/cava",
+        "custom/media",
+        "clock"
+    ],
+    "modules-right": [
+        "custom/perf-gpu",
+        "custom/perf-cpu",
+        "custom/perf-memory",
+        "custom/perf-network",
+        // "custom/perf-disk",
+        "custom/volume-mixer",
+        "custom/theme",
+        "custom/hyprsunset",
+        "idle_inhibitor",
+        "tray"
+    ],
+
+    "hyprland/workspaces": {
+        "all-outputs": false,
+        "active-only": false,
+        "disable-scroll": false,
+        "show-special": false,
+        "sort-by": "number",
+        "format": "{id}",
+        "persistent-workspaces": {
+            "*": 5
+        },
+        "workspace-taskbar": {
+            "enable": true,
+            "update-active-window": true,
+            "active-window-position": "first",
+            "icon-size": 18,
+            "icon-theme": [
+                "Papirus-Dark",
+                "Papirus",
+                "Adwaita"
+            ],
+            "format": "{icon}"
+        }
+    },
+
+    "hyprland/window": {
+        "icon": true,
+        "icon-size": 18,
+        "separate-outputs": false,
+        "format": "{}",
+        "rewrite": {
+            "(.*) - Vivaldi": "$1",
+            "(.*) - Cursor": "$1",
+            "(.*) - kitty": "$1"
+        }
+    },
+
+    "clock": {
+        "format": "  {:%a %d %b  %H:%M}",
+        "format-alt": "  {:%Y-%m-%d}",
+        "tooltip-format": "<big>{:%A, %d %B %Y}</big>"
+    },
+
+    "custom/cava": {
+        "exec": "$HOME/.config/waybar/scripts/cava.sh",
+        "format": "{}",
+        "hide-empty-text": true,
+        "tooltip": false,
+        "on-click": "playerctl play-pause"
+    },
+
+    "custom/media": {
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py media",
+        "return-type": "json",
+        "interval": 1,
+        "on-click": "playerctl play-pause",
+        "on-click-right": "playerctl next",
+        "on-click-middle": "playerctl previous",
+        "on-scroll-up": "playerctl position 5+",
+        "on-scroll-down": "playerctl position 5-",
+        "tooltip": true
+    },
+
+    "custom/perf-gpu": {
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py gpu",
+        "return-type": "json",
+        "interval": 3
+    },
+
+    "custom/perf-cpu": {
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py cpu",
+        "return-type": "json",
+        "interval": 2
+    },
+
+    "custom/perf-memory": {
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py memory",
+        "return-type": "json",
+        "interval": 3
+    },
+
+    "custom/perf-network": {
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py network",
+        "return-type": "json",
+        "interval": 2
+    },
+
+    "custom/perf-disk": {
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py disk",
+        "return-type": "json",
+        "interval": 3
+    },
+
+    "custom/volume-mixer": {
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py volume",
+        "return-type": "json",
+        "interval": 1,
+        "on-click": "pavucontrol",
+        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+        "on-scroll-up": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+",
+        "on-scroll-down": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"
+    },
+
+    "custom/theme": {
+        "exec": "$HOME/.config/themes/bin/theme widget",
+        "return-type": "json",
+        "interval": 5,
+        "on-click": "$HOME/.config/themes/bin/theme picker --quiet",
+        "on-click-right": "$HOME/.config/themes/bin/theme cycle --quiet",
+        "on-click-middle": "$HOME/.config/themes/bin/theme cycle --backward --quiet",
+        "on-scroll-up": "$HOME/.config/themes/bin/theme cycle --quiet",
+        "on-scroll-down": "$HOME/.config/themes/bin/theme cycle --backward --quiet",
+        "tooltip": true
+    },
+
+    "custom/hyprsunset": {
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py hyprsunset",
+        "return-type": "json",
+        "interval": 2,
+        "on-click": "$HOME/.config/waybar/scripts/status_widgets.py hyprsunset-toggle",
+        "on-click-right": "$HOME/.config/waybar/scripts/status_widgets.py hyprsunset-menu",
+        "on-click-middle": "$HOME/.config/waybar/scripts/status_widgets.py hyprsunset-reset",
+        "on-scroll-up": "$HOME/.config/waybar/scripts/status_widgets.py hyprsunset-adjust -250",
+        "on-scroll-down": "$HOME/.config/waybar/scripts/status_widgets.py hyprsunset-adjust +250",
+        "tooltip": true
+    },
+
+    "idle_inhibitor": {
+        "format": "{icon}",
+        "format-icons": {
+            "activated": "󰅶",
+            "deactivated": "󰛊"
+        },
+        "tooltip-format-activated": "Stay awake: on",
+        "tooltip-format-deactivated": "Stay awake: off",
+        "start-activated": false
+    },
+
+    "tray": {
+        "icon-size": 18,
+        "spacing": 10
+    }
+}

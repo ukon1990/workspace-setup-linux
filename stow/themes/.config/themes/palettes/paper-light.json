@@ -1,0 +1,28 @@
+{
+    "name": "paper-light",
+    "display_name": "Paper Light",
+    "mode": "light",
+    "icon": "\uf185",
+    "colors": {
+        "bg": "#f5efe4",
+        "surface": "#fbf6ec",
+        "surface_high": "#ebe3d2",
+        "surface_higher": "#ddd1ba",
+        "outline": "#b7a98d",
+        "text": "#2d261c",
+        "text_muted": "#5a4f3d",
+        "primary": "#a85a18",
+        "primary_container": "#f2d5ac",
+        "on_primary": "#2d1a08",
+        "accent_container": "#d98c3d",
+        "hypr_active_border": "#a85a18",
+        "hypr_inactive_border": "#b7a98d",
+        "shadow": "#3a2f22",
+        "groupbar_active": "#f2d5ac",
+        "groupbar_inactive": "#ebe3d2",
+        "groupbar_locked_active": "#e6bd7e",
+        "groupbar_locked_inactive": "#ddd1ba",
+        "groupbar_text_active": "#2d1a08",
+        "groupbar_text_inactive": "#5a4f3d"
+    }
+}

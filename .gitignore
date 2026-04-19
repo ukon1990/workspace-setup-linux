@@ -1,0 +1,29 @@
+# Secrets / private data
+secrets/
+private/
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+*.age
+*.gpg
+
+# Caches and generated files
+**/__pycache__/
+**/*.pyc
+**/.cache/
+**/cache/
+**/*.swp
+**/*.swo
+**/*.tmp
+**/*.bak
+
+# Desktop/app leftovers
+.DS_Store
+Thumbs.db
+
+# gh secrets
+stow/gh/.config/gh/hosts.yml
+**/.config/gh/hosts.yml

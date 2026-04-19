@@ -1,0 +1,32 @@
+# cava config tuned for an inline Waybar spectrum analyzer.
+# Each bar is one frequency band (low -> high across the width).
+# Output is one frame per line: <digit>;<digit>;...;<digit>\n
+# with digits 0..7 which cava.sh translates to ▁▂▃▄▅▆▇█.
+
+[general]
+bars = 14
+framerate = 60
+autosens = 1
+sensitivity = 100
+lower_cutoff_freq = 50
+higher_cutoff_freq = 10000
+
+[input]
+method = pulse
+source = auto
+
+[smoothing]
+# Keep some liveliness per band — too much monstercat makes every bar
+# move in unison which defeats the point of a spectrum.
+monstercat = 0.6
+noise_reduction = 0.4
+
+[output]
+method = raw
+raw_target = /dev/stdout
+data_format = ascii
+ascii_max_range = 7
+# 59 = ';'. We must NOT use 0 here; NUL bytes truncate the line in Waybar.
+bar_delimiter = 59
+frame_delimiter = 10
+channels = mono

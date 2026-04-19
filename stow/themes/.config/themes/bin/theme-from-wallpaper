@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+"""Generate a transient theme palette from a wallpaper image.
+
+Uses ``matugen`` if available, otherwise falls back to a simple median-color
+heuristic using Python's stdlib. The resulting palette is stored as a
+``wallpaper`` theme and applied immediately.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+THEME_DIR = HERE.parent
+PALETTE_DIR = THEME_DIR / "palettes"
+THEME_BIN = HERE / "theme"
+
+
+def _relative_luminance(r: int, g: int, b: int) -> float:
+    def channel(c: int) -> float:
+        c_linear = c / 255.0
+        return c_linear / 12.92 if c_linear <= 0.03928 else ((c_linear + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def _lighten(r: int, g: int, b: int, factor: float) -> tuple[int, int, int]:
+    return (
+        int(round(r + (255 - r) * factor)),
+        int(round(g + (255 - g) * factor)),
+        int(round(b + (255 - b) * factor)),
+    )
+
+
+def _darken(r: int, g: int, b: int, factor: float) -> tuple[int, int, int]:
+    return (
+        int(round(r * (1.0 - factor))),
+        int(round(g * (1.0 - factor))),
+        int(round(b * (1.0 - factor))),
+    )
+
+
+def _to_hex(rgb: tuple[int, int, int]) -> str:
+    r, g, b = rgb
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def sample_dominant(image_path: Path) -> tuple[int, int, int]:
+    try:
+        from PIL import Image  # type: ignore
+    except ImportError:
+        raise SystemExit(
+            "Pillow (python-pillow) is required for the fallback wallpaper mode.\n"
+            "Install `matugen` for better results, or `pip install pillow`."
+        )
+
+    with Image.open(image_path) as img:
+        img = img.convert("RGB")
+        small = img.resize((64, 64))
+        pixels = list(small.getdata())
+
+    # Bucket pixels into coarse color cells and pick the most saturated cell.
+    buckets: dict[tuple[int, int, int], int] = {}
+    for r, g, b in pixels:
+        key = (r // 32, g // 32, b // 32)
+        buckets[key] = buckets.get(key, 0) + 1
+    best = max(buckets.items(), key=lambda kv: kv[1])[0]
+    # Average pixels in that bucket for a stable color
+    in_bucket = [p for p in pixels if (p[0] // 32, p[1] // 32, p[2] // 32) == best]
+    avg = (
+        sum(p[0] for p in in_bucket) // len(in_bucket),
+        sum(p[1] for p in in_bucket) // len(in_bucket),
+        sum(p[2] for p in in_bucket) // len(in_bucket),
+    )
+    return avg
+
+
+def build_palette_from_color(base: tuple[int, int, int], name: str, wallpaper: str) -> dict:
+    lum = _relative_luminance(*base)
+    dark_mode = lum < 0.5
+
+    # Build tokens by tinting the dominant color.
+    if dark_mode:
+        bg = _darken(*base, 0.85)
+        surface = _darken(*base, 0.78)
+        surface_high = _darken(*base, 0.68)
+        surface_higher = _darken(*base, 0.55)
+        outline = _darken(*base, 0.30)
+        text = _lighten(*base, 0.90)
+        text_muted = _lighten(*base, 0.55)
+        primary = _lighten(*base, 0.15)
+        primary_container = _darken(*base, 0.45)
+        on_primary = _lighten(*base, 0.95)
+        accent_container = _lighten(*base, 0.05)
+        hypr_active = primary
+        hypr_inactive = outline
+        shadow = _darken(*base, 0.92)
+        gb_active = primary_container
+        gb_inactive = _darken(*base, 0.80)
+        gb_locked_active = _lighten(*primary_container, 0.15)
+        gb_locked_inactive = _darken(*base, 0.70)
+        gb_text_active = on_primary
+        gb_text_inactive = text_muted
+        mode = "dark"
+    else:
+        bg = _lighten(*base, 0.85)
+        surface = _lighten(*base, 0.78)
+        surface_high = _lighten(*base, 0.62)
+        surface_higher = _lighten(*base, 0.45)
+        outline = _lighten(*base, 0.15)
+        text = _darken(*base, 0.80)
+        text_muted = _darken(*base, 0.45)
+        primary = _darken(*base, 0.20)
+        primary_container = _lighten(*base, 0.55)
+        on_primary = _darken(*base, 0.90)
+        accent_container = _darken(*base, 0.05)
+        hypr_active = primary
+        hypr_inactive = outline
+        shadow = _darken(*base, 0.55)
+        gb_active = primary_container
+        gb_inactive = _lighten(*base, 0.70)
+        gb_locked_active = _darken(*primary_container, 0.20)
+        gb_locked_inactive = _lighten(*base, 0.60)
+        gb_text_active = on_primary
+        gb_text_inactive = text_muted
+        mode = "light"
+
+    return {
+        "name": name,
+        "display_name": "Wallpaper",
+        "mode": mode,
+        "icon": "\uf03e",
+        "source": {"wallpaper": wallpaper},
+        "colors": {
+            "bg": _to_hex(bg),
+            "surface": _to_hex(surface),
+            "surface_high": _to_hex(surface_high),
+            "surface_higher": _to_hex(surface_higher),
+            "outline": _to_hex(outline),
+            "text": _to_hex(text),
+            "text_muted": _to_hex(text_muted),
+            "primary": _to_hex(primary),
+            "primary_container": _to_hex(primary_container),
+            "on_primary": _to_hex(on_primary),
+            "accent_container": _to_hex(accent_container),
+            "hypr_active_border": _to_hex(hypr_active),
+            "hypr_inactive_border": _to_hex(hypr_inactive),
+            "shadow": _to_hex(shadow),
+            "groupbar_active": _to_hex(gb_active),
+            "groupbar_inactive": _to_hex(gb_inactive),
+            "groupbar_locked_active": _to_hex(gb_locked_active),
+            "groupbar_locked_inactive": _to_hex(gb_locked_inactive),
+            "groupbar_text_active": _to_hex(gb_text_active),
+            "groupbar_text_inactive": _to_hex(gb_text_inactive),
+        },
+    }
+
+
+def try_matugen(image_path: Path) -> dict | None:
+    if not shutil.which("matugen"):
+        return None
+    try:
+        result = subprocess.run(
+            ["matugen", "--json", "hex", "image", str(image_path)],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=20,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+    colors = data.get("colors", {})
+    dark = colors.get("dark") or {}
+    light = colors.get("light") or {}
+    chosen = dark if dark else light
+    if not chosen:
+        return None
+
+    mode = "dark" if chosen is dark else "light"
+
+    def pick(*keys: str, default: str = "#000000") -> str:
+        for key in keys:
+            if key in chosen:
+                return chosen[key]
+        return default
+
+    return {
+        "name": "wallpaper",
+        "display_name": "Wallpaper",
+        "mode": mode,
+        "icon": "\uf03e",
+        "source": {"wallpaper": str(image_path), "generator": "matugen"},
+        "colors": {
+            "bg": pick("background", "surface"),
+            "surface": pick("surface", "surface_container"),
+            "surface_high": pick("surface_container_high", "surface"),
+            "surface_higher": pick("surface_container_highest", "surface"),
+            "outline": pick("outline"),
+            "text": pick("on_surface", "on_background"),
+            "text_muted": pick("on_surface_variant", "outline"),
+            "primary": pick("primary"),
+            "primary_container": pick("primary_container"),
+            "on_primary": pick("on_primary"),
+            "accent_container": pick("tertiary_container", "secondary_container"),
+            "hypr_active_border": pick("primary"),
+            "hypr_inactive_border": pick("outline"),
+            "shadow": pick("shadow", "scrim", "background"),
+            "groupbar_active": pick("primary_container"),
+            "groupbar_inactive": pick("surface_container_low", "surface"),
+            "groupbar_locked_active": pick("secondary_container", "primary_container"),
+            "groupbar_locked_inactive": pick("surface_container", "surface"),
+            "groupbar_text_active": pick("on_primary_container", "on_primary"),
+            "groupbar_text_inactive": pick("on_surface_variant", "on_surface"),
+        },
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Generate a theme from a wallpaper")
+    parser.add_argument("image", help="Path to the wallpaper image")
+    parser.add_argument("--no-apply", action="store_true", help="Only write the palette, do not apply")
+    args = parser.parse_args(argv)
+
+    image_path = Path(args.image).expanduser().resolve()
+    if not image_path.exists():
+        raise SystemExit(f"Wallpaper not found: {image_path}")
+
+    palette = try_matugen(image_path)
+    if palette is None:
+        dominant = sample_dominant(image_path)
+        palette = build_palette_from_color(dominant, "wallpaper", str(image_path))
+
+    out_path = PALETTE_DIR / "wallpaper.json"
+    out_path.write_text(json.dumps(palette, indent=4) + "\n")
+    print(f"Wrote palette: {out_path}")
+
+    if args.no_apply:
+        return 0
+
+    return subprocess.call([str(THEME_BIN), "set", "wallpaper"])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,256 @@
+/* Colors are theme-driven; see ~/.config/themes/bin/theme */
+@import url("colors.css");
+
+* {
+    border: none;
+    border-radius: 0;
+    min-height: 0;
+    font-family: "Noto Sans", "Font Awesome 6 Free", FontAwesome, "Symbols Nerd Font Mono";
+    font-size: 15px;
+    font-weight: 600;
+}
+
+window#waybar {
+    background: transparent;
+    color: @text;
+}
+
+tooltip {
+    background: @surface-high;
+    border: 1px solid @outline-strong;
+    border-radius: 14px;
+    color: @text;
+}
+
+#workspaces,
+#window,
+#clock,
+#custom-cava,
+#custom-media,
+#custom-perf-gpu,
+#custom-perf-cpu,
+#custom-perf-memory,
+#custom-perf-network,
+#custom-perf-disk,
+#custom-volume-mixer,
+#custom-theme,
+#custom-hyprsunset,
+#idle_inhibitor,
+#tray {
+    background: @surface;
+    border: 1px solid @outline-soft;
+    border-radius: 18px;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+    color: @text;
+    margin: 6px 0;
+}
+
+#workspaces {
+    padding: 4px 8px;
+}
+
+#workspaces button {
+    background: transparent;
+    color: @text-muted;
+    border-radius: 12px;
+    margin: 0 4px;
+    padding: 4px 8px;
+    min-width: 34px;
+    transition: all 0.18s ease;
+}
+
+#workspaces button:hover {
+    background: @surface-higher;
+    color: @text;
+}
+
+#workspaces button.active {
+    background: @primary-container;
+    color: @on-primary;
+}
+
+#workspaces button.empty {
+    color: @text-faint;
+}
+
+#workspaces .workspace-label {
+    margin-right: 8px;
+}
+
+#workspaces .taskbar-window {
+    background: @surface-high;
+    border-radius: 10px;
+    margin: 0 3px;
+    padding: 4px 6px;
+}
+
+#workspaces .taskbar-window.active {
+    background: @surface-higher;
+    border: 1px solid @primary-border;
+}
+
+#window {
+    padding: 0 16px;
+    color: @text;
+}
+
+#clock,
+#custom-media,
+#custom-perf-gpu,
+#custom-perf-cpu,
+#custom-perf-memory,
+#custom-perf-network,
+#custom-perf-disk,
+#custom-volume-mixer,
+#custom-theme,
+#custom-hyprsunset,
+#idle_inhibitor,
+#tray {
+    padding: 0 14px;
+}
+
+#custom-cava {
+    padding: 0 12px;
+    color: @primary;
+    font-family: "JetBrainsMono Nerd Font", "DejaVu Sans Mono", "Noto Sans Mono", monospace;
+    font-size: 14px;
+    letter-spacing: 2px;
+    min-width: 170px;
+    transition: color 0.18s ease, border-color 0.18s ease;
+}
+
+#custom-cava:hover {
+    border-color: @primary-border-strong;
+}
+
+#custom-media,
+#custom-perf-gpu,
+#custom-perf-cpu,
+#custom-perf-memory,
+#custom-perf-network,
+#custom-perf-disk,
+#custom-volume-mixer,
+#custom-theme,
+#custom-hyprsunset,
+#idle_inhibitor {
+    font-family: "Noto Sans", "Symbols Nerd Font Mono", "Font Awesome 6 Free", FontAwesome;
+}
+
+#custom-perf-gpu,
+#custom-perf-cpu,
+#custom-perf-memory,
+#custom-perf-network,
+#custom-perf-disk {
+    min-width: 86px;
+}
+
+#custom-perf-network {
+    min-width: 93px;
+}
+
+#custom-volume-mixer {
+    min-width: 130px;
+}
+
+#idle_inhibitor {
+    min-width: 44px;
+    color: @text-muted;
+}
+
+#idle_inhibitor.activated {
+    color: @on-primary;
+    background: @primary-container;
+    border: 1px solid @primary-border-strong;
+}
+
+#idle_inhibitor.deactivated {
+    color: @text-muted;
+}
+
+#custom-hyprsunset {
+    min-width: 86px;
+    color: @text-muted;
+    transition: all 0.18s ease;
+}
+
+#custom-hyprsunset.active {
+    color: @on-primary;
+    background: @primary-container;
+    border: 1px solid @primary-border-strong;
+}
+
+#custom-hyprsunset.muted {
+    color: @text-muted;
+}
+
+#custom-hyprsunset:hover {
+    border-color: @primary-border-strong;
+}
+
+#custom-perf-gpu.muted,
+#custom-perf-cpu.muted,
+#custom-perf-memory.muted,
+#custom-perf-network.muted,
+#custom-perf-disk.muted,
+#custom-volume-mixer.muted {
+    color: @text-muted-soft;
+}
+
+#custom-volume-mixer.active {
+    border-color: @primary-border-strong;
+}
+
+#custom-media {
+    color: @text;
+    min-width: 280px;
+    transition: all 0.18s ease;
+}
+
+#custom-media.playing {
+    color: @text;
+    border-color: @primary-border-strong;
+}
+
+#custom-media.paused {
+    color: @text-muted;
+}
+
+#custom-media.idle,
+#custom-media.muted {
+    color: @text-muted-soft;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+}
+
+#custom-theme {
+    color: @text;
+    min-width: 150px;
+    transition: all 0.18s ease;
+}
+
+#custom-theme.theme-light {
+    color: @on-primary;
+    background: @primary-container;
+    border-color: @primary-border-strong;
+}
+
+#custom-theme:hover {
+    border-color: @primary-border-strong;
+}
+
+#tray {
+    padding-right: 16px;
+}
+
+#tray > .passive {
+    -gtk-icon-effect: dim;
+}
+
+#tray > .needs-attention {
+    background: @accent-container;
+    border-radius: 10px;
+}

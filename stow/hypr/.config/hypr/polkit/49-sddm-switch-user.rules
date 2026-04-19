@@ -1,0 +1,19 @@
+// Allow jonas to start a secondary SDDM greeter for user switching
+// without interactive auth. Scoped to exactly one unit and one verb,
+// so this is not a blanket passwordless systemctl grant.
+//
+// Install:   sudo cp ~/.config/hypr/polkit/49-sddm-switch-user.rules \
+//                    /etc/polkit-1/rules.d/
+// Verify:    pkexec systemctl start [email protected]   # should not prompt
+//
+// Without this rule, pkexec will raise a polkit auth dialog that
+// cannot be reached while hyprlock covers the screen — so the
+// "Switch user" button on the lock screen would do nothing.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "[email protected]" &&
+        action.lookup("verb") == "start" &&
+        subject.user == "jonas") {
+        return polkit.Result.YES;
+    }
+});

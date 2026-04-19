@@ -1,0 +1,28 @@
+{
+    "name": "rainbow",
+    "display_name": "Rainbow",
+    "mode": "dark",
+    "icon": "\uf186",
+    "colors": {
+        "bg": "#111018",
+        "surface": "#1a1925",
+        "surface_high": "#272639",
+        "surface_higher": "#37354f",
+        "outline": "#5a4e78",
+        "text": "#f0e6ff",
+        "text_muted": "#b9a9d4",
+        "primary": "#d946ef",
+        "primary_container": "#581c87",
+        "on_primary": "#fef6ff",
+        "accent_container": "#06b6d4",
+        "hypr_active_border": "#d946ef",
+        "hypr_inactive_border": "#5a4e78",
+        "shadow": "#060310",
+        "groupbar_active": "#581c87",
+        "groupbar_inactive": "#161225",
+        "groupbar_locked_active": "#7a28b5",
+        "groupbar_locked_inactive": "#231c3a",
+        "groupbar_text_active": "#fef6ff",
+        "groupbar_text_inactive": "#b9a9d4"
+    }
+}

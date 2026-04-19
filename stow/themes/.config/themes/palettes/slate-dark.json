@@ -1,0 +1,28 @@
+{
+    "name": "slate-dark",
+    "display_name": "Slate Dark",
+    "mode": "dark",
+    "icon": "\uf186",
+    "colors": {
+        "bg": "#0c1017",
+        "surface": "#141a24",
+        "surface_high": "#1c2430",
+        "surface_higher": "#29323f",
+        "outline": "#3a4554",
+        "text": "#dde6f2",
+        "text_muted": "#9aa6b7",
+        "primary": "#5ea0e0",
+        "primary_container": "#1e4c74",
+        "on_primary": "#e7f2ff",
+        "accent_container": "#3b78a8",
+        "hypr_active_border": "#5ea0e0",
+        "hypr_inactive_border": "#3a4554",
+        "shadow": "#050709",
+        "groupbar_active": "#1e4c74",
+        "groupbar_inactive": "#10151e",
+        "groupbar_locked_active": "#2a6299",
+        "groupbar_locked_inactive": "#1a222e",
+        "groupbar_text_active": "#e7f2ff",
+        "groupbar_text_inactive": "#9aa6b7"
+    }
+}

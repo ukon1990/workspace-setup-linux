@@ -1,0 +1,2 @@
+# Global npm packages installed after nvm is set up
+@mariozechner/pi-coding-agent
