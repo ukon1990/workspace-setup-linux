@@ -68,6 +68,7 @@ Or open these directly:
 - Cursor: https://www.cursor.com/downloads
 - Raider.IO: https://raider.io/addon
 - Archon: https://www.archon.gg/download?utm_source=header-cta-archon
+- OpenRazer setup docs: https://openrazer.github.io/#download
 
 Download the Linux archive/app image for each into `~/Nedlastinger`.
 
@@ -87,8 +88,35 @@ The repo also installs the desktop apps I actually used to install manually:
 - `github-cli`
 - `podman-desktop`
 - `anyrun`
+- `openrazer-daemon`
+- `input-remapper`
 - `google-chrome` via AUR if `yay` is available
 - `warp-terminal` via local `pkg.tar.zst` in `~/Nedlastinger`
+
+## Tartarus V2 input remap setup
+For Razer Tartarus key remaps, use `input-remapper` (not OpenRazer).
+
+1. Install packages:
+   ```bash
+   ./bootstrap.sh --packages
+   ```
+2. Run the setup helper (defaults to your Tartarus id `1532:022B`):
+   ```bash
+   ./scripts/setup-input-remapper.sh
+   ```
+   Optional args:
+   ```bash
+   ./scripts/setup-input-remapper.sh 1532:022B tartarus
+   ```
+3. Create/save the preset in `input-remapper-gtk` with the same preset name (default: `tartarus`).
+4. Trigger autoload once:
+   ```bash
+   input-remapper-control --command autoload
+   ```
+
+Config to keep in dotfiles:
+- `~/.config/input-remapper-2/config.json`
+- `~/.config/input-remapper-2/presets/`
 
 ## Notes
 - If you add secrets later, keep them out of git.
