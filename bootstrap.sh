@@ -15,7 +15,7 @@ Usage: $(basename "$0") [options]
 
 Options:
   --packages   Install repo packages (common -> Hyprland -> apps -> AUR)
-  --shell      Install shell tools (nvm -> Node 25 -> npm globals -> SDKMAN)
+  --shell      Install shell tools (nvm -> Node 25 -> npm globals -> SDKMAN -> Java 25.0.2-amzn)
   --link       Link configs into your home directory
   --apps       Install downloaded vendor apps
   --yes        Run selected steps non-interactively; implies --packages --shell --link --apps
@@ -145,7 +145,7 @@ if [[ $RUN_PACKAGES -eq 1 ]]; then
 fi
 
 if [[ $RUN_SHELL -eq 1 ]]; then
-  if [[ $AUTO_YES -eq 1 ]] || ask_yes_no 'Install shell tools now (nvm -> Node 25 -> npm globals -> SDKMAN)?'; then
+  if [[ $AUTO_YES -eq 1 ]] || ask_yes_no 'Install shell tools now (nvm -> Node 25 -> npm globals -> SDKMAN -> Java 25.0.2-amzn)?'; then
     run_step 'Installing shell tools' "$ROOT/scripts/install-shell-tools.sh"
   fi
 fi

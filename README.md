@@ -19,7 +19,7 @@ This repo is meant to be **public-safe**:
 - lxqt + policykit session config
 - package lists for reinstalling apps on a fresh system
 - vendor app installer for downloaded tar.gz/AppImage files
-- shell tool installer for nvm, Node 25, npm globals, and SDKMAN
+- shell tool installer for nvm, Node 25, npm globals, SDKMAN, and Java 25.0.2-amzn
 
 ## Structure
 - `stow/` — actual dotfiles, grouped by package
@@ -44,7 +44,7 @@ This repo is meant to be **public-safe**:
    ```
 4. In bootstrap, the setup runs in this order:
    - repo packages: `common.txt` -> `hyprland.txt` -> `apps.txt` -> `aur.txt`
-   - shell tools: `nvm` -> Node.js 25 -> npm globals -> `SDKMAN`
+  - shell tools: `nvm` -> Node.js 25 -> npm globals -> `SDKMAN` -> Java `25.0.2-amzn`
    - link configs into your home directory
    - vendor apps from `~/Nedlastinger`
 5. Download vendor apps into `~/Nedlastinger`
@@ -99,7 +99,7 @@ The repo also installs the desktop apps I actually used to install manually:
 - If you want a machine-specific config, add a separate package or script.
 - `packages/local-installs.md` lists local non-pacman installs like Warp Terminal.
 - `kitty` has no config file in your current setup, so it is not included yet.
-- run `./scripts/install-shell-tools.sh` if you want nvm + Node + SDKMAN without going through bootstrap.
+- run `./scripts/install-shell-tools.sh` if you want nvm + Node + SDKMAN + Java without going through bootstrap.
 - nvm installs to `~/.config/nvm` on this setup.
 - Node.js 25 is installed by default after nvm.
 - global npm packages are listed in `packages/npm-global.txt`.

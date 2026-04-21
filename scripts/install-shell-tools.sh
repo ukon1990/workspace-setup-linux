@@ -5,6 +5,7 @@ NVM_DIR="${NVM_DIR:-$HOME/.config/nvm}"
 SDKMAN_DIR="${SDKMAN_DIR:-$HOME/.sdkman}"
 NVM_VERSION="${NVM_VERSION:-v0.40.3}"
 NVM_NODE_VERSION="${NVM_NODE_VERSION:-25}"
+SDKMAN_JAVA_VERSION="${SDKMAN_JAVA_VERSION:-25.0.2-amzn}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NPM_GLOBAL_FILE="${NPM_GLOBAL_FILE:-$ROOT/packages/npm-global.txt}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -92,7 +93,27 @@ install_sdkman() {
   fi
 
   echo "Installing SDKMAN..."
-  curl -fsSL https://get.sdkman.io | bash
+  curl -s "https://get.sdkman.io" | bash
+}
+
+install_sdkman_java() {
+  if [[ "$DRY_RUN" == 1 ]]; then
+    echo "Would install Java $SDKMAN_JAVA_VERSION via SDKMAN"
+    return 0
+  fi
+
+  if [[ ! -s "$SDKMAN_DIR/bin/sdkman-init.sh" ]]; then
+    echo "SDKMAN init script not found at $SDKMAN_DIR/bin/sdkman-init.sh"
+    exit 1
+  fi
+
+  if [[ -d "$SDKMAN_DIR/candidates/java/$SDKMAN_JAVA_VERSION" ]]; then
+    echo "SDKMAN Java already installed: $SDKMAN_JAVA_VERSION"
+    return 0
+  fi
+
+  echo "Installing Java $SDKMAN_JAVA_VERSION via SDKMAN..."
+  bash -lc "source \"$SDKMAN_DIR/bin/sdkman-init.sh\" && sdk install java $SDKMAN_JAVA_VERSION"
 }
 
 main() {
@@ -102,12 +123,14 @@ main() {
   install_nvm
   install_node_and_globals
   install_sdkman
+  install_sdkman_java
 
   echo
   echo "Shell tools installed. Restart your shell or source the init scripts."
   echo "nvm:    ${NVM_DIR}"
   echo "Node:   ${NVM_NODE_VERSION}"
   echo "SDKMAN: $SDKMAN_DIR"
+  echo "Java:   ${SDKMAN_JAVA_VERSION}"
 }
 
 main "$@"
