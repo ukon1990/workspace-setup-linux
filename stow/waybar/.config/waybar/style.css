@@ -37,7 +37,7 @@ tooltip {
 #custom-hyprsunset,
 #idle_inhibitor,
 #tray {
-    background: @surface;
+    background: alpha(@surface, 0.5);
     border: 1px solid @outline-soft;
     border-radius: 18px;
     box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
