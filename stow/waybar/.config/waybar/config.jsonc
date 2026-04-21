@@ -35,12 +35,13 @@
         "disable-scroll": false,
         "show-special": false,
         "sort-by": "number",
-        "format": "{id}",
+        "format": "",
         "persistent-workspaces": {
-            "*": 5
+            "DP-1": [1, 2, 3, 4, 5],
+            "HDMI-A-1": [6, 7, 8, 9, 10]
         },
         "workspace-taskbar": {
-            "enable": true,
+            "enable": false,
             "update-active-window": true,
             "active-window-position": "first",
             "icon-size": 18,

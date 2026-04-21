@@ -46,47 +46,30 @@ tooltip {
 }
 
 #workspaces {
-    padding: 4px 8px;
+    padding: 4px 10px;
 }
 
 #workspaces button {
     background: transparent;
-    color: @text-muted;
+    color: @text-faint;
     border-radius: 12px;
-    margin: 0 4px;
-    padding: 4px 8px;
-    min-width: 34px;
-    transition: all 0.18s ease;
+    margin: 0 2px;
+    padding: 0 3px;
+    min-width: 18px;
 }
 
 #workspaces button:hover {
-    background: @surface-higher;
-    color: @text;
+    background: transparent;
+    color: @text-muted;
 }
 
 #workspaces button.active {
-    background: @primary-container;
-    color: @on-primary;
+    background: transparent;
+    color: @primary;
 }
 
 #workspaces button.empty {
     color: @text-faint;
-}
-
-#workspaces .workspace-label {
-    margin-right: 8px;
-}
-
-#workspaces .taskbar-window {
-    background: @surface-high;
-    border-radius: 10px;
-    margin: 0 3px;
-    padding: 4px 6px;
-}
-
-#workspaces .taskbar-window.active {
-    background: @surface-higher;
-    border: 1px solid @primary-border;
 }
 
 #window {
