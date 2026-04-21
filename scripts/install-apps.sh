@@ -168,7 +168,14 @@ install_jetbrains_tarball() {
   cat > "$BIN_DIR/$launcher_name" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-exec "\$HOME/.local/opt/jetbrains/$launcher_name/current/bin/$binary_name.sh" "\$@"
+_base="\$HOME/.local/opt/jetbrains/$launcher_name/current/bin"
+if [[ -x "\$_base/$binary_name" ]]; then
+  exec "\$_base/$binary_name" "\$@"
+elif [[ -x "\$_base/${binary_name}.sh" ]]; then
+  exec "\$_base/${binary_name}.sh" "\$@"
+fi
+echo "$app_name: no launcher in \$_base (expected $binary_name or ${binary_name}.sh)" >&2
+exit 1
 EOF
   chmod +x "$BIN_DIR/$launcher_name"
 

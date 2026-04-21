@@ -7,6 +7,10 @@ POLL_SECONDS="${POLL_SECONDS:-2}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LAYOUT_SCRIPT="$SCRIPT_DIR/monitor_layout.py"
 
+log_warn() {
+    printf '[auto-monitor-layout] %s\n' "$*" >&2
+}
+
 build_layout() {
     hyprctl monitors -j | python3 "$LAYOUT_SCRIPT" "$MAIN_MONITOR" "$SECONDARY_MONITOR"
 }
@@ -41,7 +45,9 @@ apply_layout() {
 }
 
 run_once() {
-    apply_layout >/dev/null
+    if ! apply_layout >/dev/null; then
+        log_warn "run_once failed; monitor state may be transient"
+    fi
 }
 
 run_daemon() {
@@ -51,13 +57,33 @@ run_daemon() {
     exec 9>"$lock_file"
     flock -n 9 || exit 0
 
-    last_state="$(apply_layout)"
+    if last_state="$(apply_layout 2>/dev/null)"; then
+        :
+    else
+        log_warn "initial layout apply failed; daemon will keep retrying"
+        last_state=""
+    fi
+
     while true; do
         sleep "$POLL_SECONDS"
-        layout_output="$(build_layout)"
-        current_state="$(extract_state "$layout_output")"
+
+        if ! layout_output="$(build_layout 2>/dev/null)"; then
+            log_warn "failed to query/build monitor layout; retrying"
+            continue
+        fi
+
+        current_state="$(extract_state "$layout_output" || true)"
+        if [[ -z "$current_state" ]]; then
+            log_warn "layout output missing STATE; skipping this poll"
+            continue
+        fi
+
         if [[ "$current_state" != "$last_state" ]]; then
-            last_state="$(apply_layout)"
+            if last_state="$(apply_layout 2>/dev/null)"; then
+                :
+            else
+                log_warn "failed to apply layout update; keeping daemon alive"
+            fi
         fi
     done
 }

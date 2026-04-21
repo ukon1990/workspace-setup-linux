@@ -48,6 +48,7 @@ This repo is meant to be **public-safe**:
    - link configs into your home directory
    - vendor apps from `~/Nedlastinger`
 5. Download vendor apps into `~/Nedlastinger`
+   - **IntelliJ IDEA / Rider:** On each JetBrains product page, pick **Linux** and download the **`.tar.gz`** archive (not Toolbox unless you install that separately). Typical filenames: `ideaIU-*.tar.gz` or `ideaIC-*.tar.gz` for IDEA, `JetBrains.Rider-*.tar.gz` or `rider-*.tar.gz` for Rider. The installer unpacks to `~/.local/opt/jetbrains/<app>/current/` and wires `~/.local/bin` plus desktop entries to the native **`bin/idea`** / **`bin/rider`** launchers (falls back to `.sh` only if the native binary is missing).
 6. Run:
    ```bash
    ./scripts/install-apps.sh --yes
@@ -62,7 +63,7 @@ Run:
 ```bash
 ./scripts/install-apps.sh --list
 ```
-Or open these directly:
+Or open these directly (then choose **Linux → .tar.gz** on the page):
 - IntelliJ IDEA: https://www.jetbrains.com/idea/download/?section=linux
 - Rider: https://www.jetbrains.com/rider/download/?section=linux
 - Cursor: https://www.cursor.com/downloads

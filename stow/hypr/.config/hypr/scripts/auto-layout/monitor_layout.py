@@ -36,11 +36,21 @@ def choose_main_mode(monitor):
         return "preferred"
 
     current_width = int(monitor["width"])
+    current_height = int(monitor["height"])
     native_mode = best_mode(modes)
     width_matched_mode = best_mode(modes, current_width)
 
-    # Some Samsung ultrawide PIP states report 3840x1080 as "preferred"
-    # even though the panel still supports the full 5120x1440 mode.
+    # Some Samsung ultrawide split/PIP states report reduced-width modes as
+    # current/preferred even though the full native mode is available.
+    # If the monitor is in a narrower mode than native, force native.
+    if (
+        current_width != native_mode["width"]
+        and native_mode["width"] > current_width
+        and native_mode["height"] >= current_height
+    ):
+        return native_mode["text"]
+
+    # Keep an extra guard for odd reduced-height PIP states.
     if (
         width_matched_mode
         and width_matched_mode["height"] < native_mode["height"]
@@ -67,6 +77,13 @@ def choose_secondary_mode(monitor):
     return best_mode(modes)["text"]
 
 
+def mode_dimensions(mode_text):
+    parsed = parse_mode(mode_text)
+    if not parsed:
+        return None
+    return parsed["width"], parsed["height"]
+
+
 def main():
     main_name = sys.argv[1]
     secondary_name = sys.argv[2]
@@ -79,19 +96,32 @@ def main():
     commands = []
 
     if main_monitor:
-        state_parts.append("{}:{}x{}".format(main_name, main_monitor["width"], main_monitor["height"]))
-        commands.append("{}, {}, 0x0, 1".format(main_name, choose_main_mode(main_monitor)))
-        main_height = int(main_monitor["height"])
+        main_refresh = float(main_monitor.get("refreshRate", 0.0))
+        state_parts.append(
+            "{}:{}x{}@{:.3f}".format(main_name, main_monitor["width"], main_monitor["height"], main_refresh)
+        )
+        main_mode = choose_main_mode(main_monitor)
+        commands.append("{}, {}, 0x0, 1".format(main_name, main_mode))
+        selected_dimensions = mode_dimensions(main_mode)
+        if selected_dimensions:
+            _, main_height = selected_dimensions
+        else:
+            # Fall back to current dimensions when mode string isn't parseable (e.g. "preferred").
+            main_height = int(main_monitor["height"])
     else:
         main_height = 0
 
     if secondary_monitor:
+        secondary_refresh = float(secondary_monitor.get("refreshRate", 0.0))
         state_parts.append(
-            "{}:{}x{}".format(secondary_name, secondary_monitor["width"], secondary_monitor["height"])
+            "{}:{}x{}@{:.3f}".format(
+                secondary_name, secondary_monitor["width"], secondary_monitor["height"], secondary_refresh
+            )
         )
+        secondary_mode = choose_secondary_mode(secondary_monitor)
         commands.append(
             "{}, {}, 0x{}, 1".format(
-                secondary_name, choose_secondary_mode(secondary_monitor), main_height if main_height > 0 else 0
+                secondary_name, secondary_mode, main_height if main_height > 0 else 0
             )
         )
 
