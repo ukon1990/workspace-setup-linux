@@ -13,6 +13,9 @@ from pathlib import Path
 STATE_PATH = Path.home() / ".config" / "waybar" / ".cache" / "status-widgets.json"
 SPARKS = "▁▂▃▄▅▆▇█"
 HISTORY_LIMIT = 18
+MONITOR_CACHE_TTL = 2.0
+PERF_PRIMARY_MONITOR = os.environ.get("MAIN_MONITOR", "DP-1")
+PERF_FULL_WIDTH = 5120
 
 
 def load_state():
@@ -54,6 +57,45 @@ def sparkline(values):
 
 def run(command):
     return subprocess.run(command, capture_output=True, text=True, check=False)
+
+
+def monitor_widths(state):
+    cached = state.get("monitor_widths")
+    now = time.time()
+    if isinstance(cached, dict) and (now - cached.get("time", 0.0)) < MONITOR_CACHE_TTL:
+        widths = cached.get("widths")
+        if isinstance(widths, dict):
+            return widths
+
+    widths = {}
+    result = run(["hyprctl", "monitors", "-j"])
+    if result.returncode == 0 and result.stdout.strip():
+        try:
+            for monitor in json.loads(result.stdout):
+                name = monitor.get("name")
+                width = monitor.get("width")
+                if name and width:
+                    widths[str(name)] = int(width)
+        except Exception:
+            widths = {}
+
+    state["monitor_widths"] = {"time": now, "widths": widths}
+    return widths
+
+
+def use_compact_perf_text(state):
+    width = monitor_widths(state).get(PERF_PRIMARY_MONITOR)
+    return width is not None and width < PERF_FULL_WIDTH
+
+
+def perf_text(icon, primary, history, compact=False):
+    if compact:
+        return f"{icon}  {primary}"
+    return f"{icon} {primary} {sparkline(history)}"
+
+
+def classes(*names):
+    return [name for name in names if name]
 
 
 def default_route_iface():
@@ -110,10 +152,11 @@ def cpu_module(state):
 
     state["cpu_prev"] = {"total": total, "idle": idle, "time": now}
     history = push_history(state, "cpu_history", usage)
+    compact = use_compact_perf_text(state)
     return {
-        "text": f" {usage:4.0f}% {sparkline(history)}",
+        "text": perf_text("", f"{usage:.0f}%", history, compact),
         "tooltip": f"CPU usage: {usage:.1f}%",
-        "class": "metric",
+        "class": classes("metric", "compact" if compact else None),
     }
 
 
@@ -131,17 +174,18 @@ def memory_module(state):
     history = push_history(state, "mem_history", usage)
     used_gib = used / 1024 / 1024
     total_gib = total / 1024 / 1024
+    compact = use_compact_perf_text(state)
     return {
-        "text": f"󰍛 {usage:4.0f}% {sparkline(history)}",
+        "text": perf_text("󰍛", f"{usage:.0f}%", history, compact),
         "tooltip": f"Memory: {used_gib:.1f} / {total_gib:.1f} GiB",
-        "class": "metric",
+        "class": classes("metric", "compact" if compact else None),
     }
 
 
 def network_module(state):
     iface = default_route_iface()
     if not iface:
-        return {"text": "󰖪 off", "tooltip": "No active network interface", "class": "metric muted"}
+        return {"text": "󰖪 off", "tooltip": "No active network interface", "class": classes("metric", "muted")}
 
     base = Path("/sys/class/net") / iface / "statistics"
     rx = int((base / "rx_bytes").read_text().strip())
@@ -160,10 +204,11 @@ def network_module(state):
     combined = down_rate + up_rate
     normalized = clamp((combined / (1024 * 1024 * 2)) * 100)
     history = push_history(state, "net_history", normalized)
+    compact = use_compact_perf_text(state)
     return {
-        "text": f"󰖟 {compact_rate(combined)} {sparkline(history)}",
+        "text": perf_text("󰖟", compact_rate(combined).strip(), history, compact),
         "tooltip": f"{iface}\nDown: {human_rate(down_rate)}\nUp: {human_rate(up_rate)}",
-        "class": "metric",
+        "class": classes("metric", "compact" if compact else None),
     }
 
 
@@ -199,10 +244,11 @@ def disk_module(state):
 
     normalized = clamp((bytes_per_second / (1024 * 1024 * 200)) * 100)
     history = push_history(state, "disk_history", normalized)
+    compact = use_compact_perf_text(state)
     return {
-        "text": f" {used_pct:4.0f}% {sparkline(history)}",
+        "text": perf_text("", f"{used_pct:.0f}%", history, compact),
         "tooltip": f"Root usage: {used_pct:.1f}%\nI/O: {human_rate(bytes_per_second)}",
-        "class": "metric",
+        "class": classes("metric", "compact" if compact else None),
     }
 
 
@@ -218,17 +264,18 @@ def gpu_module(state):
         return {
             "text": f"󰢮 n/a {sparkline(history)}",
             "tooltip": "GPU metrics unavailable right now",
-            "class": "metric muted",
+            "class": classes("metric", "muted"),
         }
 
     util, mem_used, mem_total, temp = [x.strip() for x in result.stdout.strip().split(",")]
     util_f = float(util)
     mem_pct = (float(mem_used) / max(float(mem_total), 1.0)) * 100
     history = push_history(state, "gpu_history", util_f)
+    compact = use_compact_perf_text(state)
     return {
-        "text": f"󰢮 {util_f:4.0f}% {sparkline(history)}",
+        "text": perf_text("󰢮", f"{util_f:.0f}%", history, compact),
         "tooltip": f"GPU: {util_f:.0f}%\nVRAM: {mem_used}/{mem_total} MiB ({mem_pct:.0f}%)\nTemp: {temp} C",
-        "class": "metric",
+        "class": classes("metric", "compact" if compact else None),
     }
 
 
@@ -240,19 +287,24 @@ def inspect_value(output, names):
     return None
 
 
-def volume_module(_state):
+def volume_module(state):
     volume_result = run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"])
+    compact = use_compact_perf_text(state)
     if volume_result.returncode != 0:
         return {
             "text": "󰖁 audio off",
             "tooltip": "Audio server unavailable",
-            "class": "metric muted",
+            "class": classes("metric", "muted", "compact" if compact else None),
         }
 
     line = volume_result.stdout.strip()
     match = re.search(r"Volume:\s*([0-9.]+)", line)
     if not match:
-        return {"text": "󰕾 --", "tooltip": "Could not read volume", "class": "metric"}
+        return {
+            "text": "󰕾 --",
+            "tooltip": "Could not read volume",
+            "class": classes("metric", "compact" if compact else None),
+        }
 
     volume = float(match.group(1)) * 100
     muted = "[MUTED]" in line
@@ -280,9 +332,9 @@ def volume_module(_state):
 
     bar = volume_bar(volume)
     return {
-        "text": f"{icon} {volume:3.0f}% {bar}",
+        "text": f"{icon}  {volume:.0f}%" if compact else f"{icon} {volume:3.0f}% {bar}",
         "tooltip": f"{description}\nVolume: {volume:.0f}%\nLeft click: open mixer\nRight click: mute\nScroll: adjust volume",
-        "class": state_class,
+        "class": classes(*state_class.split(), "compact" if compact else None),
     }
 
 
@@ -294,7 +346,7 @@ def _mmss(seconds: int) -> str:
 _HIDDEN_MEDIA = {
     "text": "",
     "tooltip": "",
-    "class": "media idle",
+    "class": classes("media", "idle"),
     "alt": "idle",
 }
 
@@ -331,7 +383,7 @@ def media_module(_state):
         return {
             "text": "",
             "tooltip": "playerctl is not installed",
-            "class": "media muted",
+            "class": classes("media", "muted"),
             "alt": "missing",
         }
 
@@ -439,7 +491,7 @@ def media_module(_state):
     return {
         "text": text,
         "tooltip": tooltip,
-        "class": f"media {state_class}",
+        "class": classes("media", state_class),
         "alt": state_class,
     }
 

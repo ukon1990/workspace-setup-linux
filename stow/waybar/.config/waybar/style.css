@@ -148,8 +148,14 @@ tooltip {
     min-width: 93px;
 }
 
-#custom-volume-mixer {
-    min-width: 130px;
+#custom-perf-gpu.compact,
+#custom-perf-cpu.compact,
+#custom-perf-memory.compact,
+#custom-perf-network.compact,
+#custom-perf-disk.compact,
+#custom-volume-mixer.compact {
+    min-width: 58px;
+    padding: 0 5px;
 }
 
 #idle_inhibitor {
