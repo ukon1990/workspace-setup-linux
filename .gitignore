@@ -19,6 +19,11 @@ private/
 **/*.swo
 **/*.tmp
 **/*.bak
+stow/themes/.config/themes/state/current
+stow/hypr/.config/hypr/theme.conf
+stow/hypr/.config/hypr/hyprlock-colors.conf
+stow/waybar/.config/waybar/colors.css
+stow/mako/.config/mako/config
 
 # Desktop/app leftovers
 .DS_Store

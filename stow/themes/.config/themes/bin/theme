@@ -115,6 +115,7 @@ def current_theme_name() -> str:
         name = STATE_FILE.read_text().strip()
         if name and palette_path(name).exists():
             return name
+    save_current_theme(DEFAULT_THEME)
     return DEFAULT_THEME
 
 

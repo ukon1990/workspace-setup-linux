@@ -4,16 +4,6 @@ function restow
         return $status
     end
 
-    if test -x "$HOME/dotfiles/stow/scripts/scripts/restow.sh"
-        "$HOME/dotfiles/stow/scripts/scripts/restow.sh" $argv
-        return $status
-    end
-
-    if test -f "$HOME/dotfiles/scripts/link-configs.sh"
-        bash "$HOME/dotfiles/scripts/link-configs.sh" $argv
-        return $status
-    end
-
-    echo "Missing restow helper. Make sure your dotfiles repo and scripts package exist." >&2
+    echo "Missing ~/scripts/restow.sh. Re-stow the scripts package first." >&2
     return 1
 end
