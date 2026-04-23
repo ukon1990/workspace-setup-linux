@@ -3,9 +3,11 @@ set -euo pipefail
 
 NVM_DIR="${NVM_DIR:-$HOME/.config/nvm}"
 SDKMAN_DIR="${SDKMAN_DIR:-$HOME/.sdkman}"
+RBENV_ROOT="${RBENV_ROOT:-$HOME/.rbenv}"
 NVM_VERSION="${NVM_VERSION:-v0.40.3}"
 NVM_NODE_VERSION="${NVM_NODE_VERSION:-25}"
 SDKMAN_JAVA_VERSION="${SDKMAN_JAVA_VERSION:-25.0.2-amzn}"
+RUBY_VERSION="${RUBY_VERSION:-3.4.9}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NPM_GLOBAL_FILE="${NPM_GLOBAL_FILE:-$ROOT/packages/npm-global.txt}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -116,6 +118,43 @@ install_sdkman_java() {
   bash -lc "source \"$SDKMAN_DIR/bin/sdkman-init.sh\" && sdk install java $SDKMAN_JAVA_VERSION"
 }
 
+resolve_ruby_version() {
+  if [[ "$RUBY_VERSION" != "latest" ]]; then
+    printf '%s\n' "$RUBY_VERSION"
+    return 0
+  fi
+
+  rbenv install -l | awk '/^[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0); version=$0 } END { if (version != "") print version; else exit 1 }'
+}
+
+install_ruby_with_rbenv() {
+  if [[ "$DRY_RUN" == 1 ]]; then
+    echo "Would install Ruby $RUBY_VERSION via rbenv"
+    return 0
+  fi
+
+  ensure_dep rbenv
+
+  if ! rbenv commands | grep -qx install; then
+    echo 'rbenv install command is unavailable. Install ruby-build first (repo packages include it).'
+    exit 1
+  fi
+
+  local resolved_ruby_version
+  resolved_ruby_version="$(resolve_ruby_version)"
+
+  if [[ -d "$RBENV_ROOT/versions/$resolved_ruby_version" ]]; then
+    echo "Ruby already installed via rbenv: $resolved_ruby_version"
+  else
+    echo "Installing Ruby $resolved_ruby_version via rbenv..."
+    rbenv install "$resolved_ruby_version"
+  fi
+
+  echo "Setting global Ruby to $resolved_ruby_version"
+  rbenv global "$resolved_ruby_version"
+  rbenv rehash
+}
+
 main() {
   ensure_dep curl
   ensure_dep bash
@@ -124,6 +163,7 @@ main() {
   install_node_and_globals
   install_sdkman
   install_sdkman_java
+  install_ruby_with_rbenv
 
   echo
   echo "Shell tools installed. Restart your shell or source the init scripts."
@@ -131,6 +171,8 @@ main() {
   echo "Node:   ${NVM_NODE_VERSION}"
   echo "SDKMAN: $SDKMAN_DIR"
   echo "Java:   ${SDKMAN_JAVA_VERSION}"
+  echo "rbenv:  $(command -v rbenv)"
+  echo "Ruby:   $(resolve_ruby_version)"
 }
 
 main "$@"

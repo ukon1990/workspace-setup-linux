@@ -6,3 +6,5 @@ stow
 unzip
 zip
 yay
+rbenv
+ruby-build
