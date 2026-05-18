@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Cursor
+Exec=env XDG_CURRENT_DESKTOP=GNOME DESKTOP_SESSION=gnome /home/jonas/.local/bin/cursor %U
+Icon=/home/jonas/.local/opt/apps/cursor/current/cursor.png
+Terminal=false
+Categories=Development;IDE;
+StartupWMClass=Cursor
