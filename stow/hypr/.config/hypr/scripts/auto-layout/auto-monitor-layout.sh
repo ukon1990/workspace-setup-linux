@@ -35,8 +35,11 @@ apply_layout() {
             STATE)
                 state="$value"
                 ;;
-            CMD)
-                hyprctl keyword monitor "$value" >/dev/null
+            LUA)
+                if ! hyprctl eval "$value" >/dev/null 2>&1; then
+                    log_warn "hyprctl eval failed: $value"
+                    return 1
+                fi
                 ;;
         esac
     done <<< "$layout_output"

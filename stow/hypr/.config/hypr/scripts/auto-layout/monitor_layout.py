@@ -125,9 +125,16 @@ def main():
             )
         )
 
+    def lua_monitor(name: str, mode: str, position: str, scale: int) -> str:
+        return (
+            f'hl.monitor({{ output = "{name}", mode = "{mode}", '
+            f'position = "{position}", scale = {scale} }})'
+        )
+
     print("STATE\t" + "|".join(state_parts))
     for command in commands:
-        print("CMD\t" + command)
+        name, mode, position, scale = [part.strip() for part in command.split(",")]
+        print("LUA\t" + lua_monitor(name, mode, position, int(scale)))
 
 
 if __name__ == "__main__":
