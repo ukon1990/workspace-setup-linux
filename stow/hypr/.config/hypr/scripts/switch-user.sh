@@ -13,7 +13,7 @@ set -eu
 # lock first so the current session is protected before the greeter
 # grabs another VT.
 if ! pgrep -x hyprlock >/dev/null; then
-    hyprlock >/dev/null 2>&1 &
+    ~/.config/hypr/scripts/lock-session.sh >/dev/null 2>&1 &
     sleep 0.3
 fi
 

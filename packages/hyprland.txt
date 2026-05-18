@@ -1,6 +1,8 @@
 # Packages needed for the Hyprland desktop setup
 # Based on what I actually installed manually + the config dependencies.
 hyprland
+hyprlock
+hypridle
 hyprpaper
 waybar
 mako
