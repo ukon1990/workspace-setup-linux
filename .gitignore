@@ -21,6 +21,8 @@ private/
 **/*.bak
 stow/themes/.config/themes/state/current
 stow/hypr/.config/hypr/theme.conf
+stow/hypr/.config/hypr/theme.lua
+stow/hypr/.config/hypr/hyprland.conf
 stow/hypr/.config/hypr/hyprlock-colors.conf
 stow/waybar/.config/waybar/colors.css
 stow/mako/.config/mako/config

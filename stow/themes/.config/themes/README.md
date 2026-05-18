@@ -26,7 +26,7 @@ swaps colors across all three.
 
 Generated files (rewritten every time a theme is applied):
 
-- `~/.config/hypr/theme.conf` — sourced from `hyprland.conf`
+- `~/.config/hypr/theme.lua` — loaded from `hyprland.lua` via `require("theme")`
 - `~/.config/waybar/colors.css` — imported from `waybar/style.css`
 - `~/.config/mako/config` — full mako config (regenerated in place)
 
@@ -262,7 +262,7 @@ Rerun `theme-from-wallpaper` to refresh it when you change wallpapers.
 `bin/theme` is a single Python 3 script with no external dependencies
 (stdlib only). Key functions:
 
-- `render_hypr(palette)` → content of `hypr/theme.conf`
+- `render_hypr(palette)` → content of `hypr/theme.lua`
 - `render_waybar(palette)` → content of `waybar/colors.css`
 - `render_mako(palette)` → content of `mako/config`
 
@@ -295,8 +295,8 @@ pkill waybar; waybar &
 ```
 
 **Hyprland colors don't change**
-Make sure `hyprland.conf` contains the `source = ~/.config/hypr/theme.conf`
-line near the top. Then run `hyprctl reload`.
+Make sure `hyprland.lua` loads theme colors via `require("theme")` in
+`lua/appearance.lua`. Then run `theme apply` or `hyprctl reload`.
 
 **Mako doesn't pick up changes**
 `makoctl reload` must be run inside your Wayland session (it needs
