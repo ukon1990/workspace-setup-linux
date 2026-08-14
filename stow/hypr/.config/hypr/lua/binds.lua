@@ -6,7 +6,6 @@ local terminal = "kitty"
 local fileManager = "dolphin"
 local menu = "sherlock"
 
-local workspace_slot = "python3 " .. hypr .. "/scripts/workspace-slot.py"
 local lock_session = hypr .. "/scripts/lock-session.sh"
 local switch_user = hypr .. "/scripts/switch-user.sh"
 
@@ -38,9 +37,73 @@ hl.bind(mainMod .. " + right", hl.dsp.focus({ direction = "right" }))
 hl.bind(mainMod .. " + up", hl.dsp.focus({ direction = "up" }))
 hl.bind(mainMod .. " + down", hl.dsp.focus({ direction = "down" }))
 
+local SLOTS_PER_MONITOR = 5
+local PREFERRED_MONITORS = { "DP-1", "HDMI-A-1" }
+
+local function ordered_monitor_names()
+	local monitors = hl.get_monitors()
+	local by_name = {}
+	for _, m in ipairs(monitors) do
+		by_name[m.name] = true
+	end
+
+	local ordered = {}
+	local seen = {}
+	for _, preferred in ipairs(PREFERRED_MONITORS) do
+		if by_name[preferred] then
+			table.insert(ordered, preferred)
+			seen[preferred] = true
+		end
+	end
+
+	local rest = {}
+	for _, m in ipairs(monitors) do
+		if not seen[m.name] then
+			table.insert(rest, m.name)
+		end
+	end
+	table.sort(rest)
+
+	for _, name in ipairs(rest) do
+		table.insert(ordered, name)
+	end
+
+	return ordered
+end
+
+local function monitor_index(name)
+	for i, n in ipairs(ordered_monitor_names()) do
+		if n == name then
+			return i - 1
+		end
+	end
+	error("focused monitor missing from monitor list")
+end
+
+local function workspace_for_slot(slot)
+	local focused = hl.get_active_monitor()
+	local ws = monitor_index(focused.name) * SLOTS_PER_MONITOR + slot
+	return ws, focused.name
+end
+
+local function maybe_move_workspace(ws, monitor_name)
+	local workspace = hl.get_workspace(ws)
+	if workspace and workspace.monitor ~= monitor_name then
+		hl.dispatch(hl.dsp.workspace.move({ workspace = ws, monitor = monitor_name }))
+	end
+end
+
 for slot = 1, 5 do
-	hl.bind(mainMod .. " + " .. slot, hl.dsp.exec_cmd(workspace_slot .. " switch " .. slot))
-	hl.bind(mainMod .. " + SHIFT + " .. slot, hl.dsp.exec_cmd(workspace_slot .. " move " .. slot))
+	local s = slot
+	hl.bind(mainMod .. " + " .. s, function()
+		local ws, mon = workspace_for_slot(s)
+		maybe_move_workspace(ws, mon)
+		hl.dispatch(hl.dsp.focus({ workspace = ws }))
+	end)
+	hl.bind(mainMod .. " + SHIFT + " .. s, function()
+		local ws = workspace_for_slot(s)
+		hl.dispatch(hl.dsp.window.move({ workspace = ws }))
+	end)
 end
 
 for ws = 6, 10 do

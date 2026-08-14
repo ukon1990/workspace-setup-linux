@@ -136,6 +136,30 @@ extract_appimage_icon() {
   printf '%s\n' "$dest_icon"
 }
 
+install_icon_to_theme() {
+  local icon_path="$1"
+  local icon_name="$2"
+  local theme_dir icon_ext dest
+
+  icon_ext="${icon_path##*.}"
+  case "${icon_ext,,}" in
+    png|xpm)
+      theme_dir="$HOME/.local/share/icons/hicolor/256x256/apps"
+      dest="$theme_dir/${icon_name}.png"
+      ;;
+    svg)
+      theme_dir="$HOME/.local/share/icons/hicolor/scalable/apps"
+      dest="$theme_dir/${icon_name}.svg"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  mkdir -p "$theme_dir"
+  cp -f "$icon_path" "$dest"
+}
+
 is_installed_warp() { command -v warp-terminal >/dev/null 2>&1 || [[ -f "$DESKTOP_DIR/warp-terminal.desktop" ]]; }
 is_installed_intellij() { [[ -x "$BIN_DIR/intellij-idea" && -f "$DESKTOP_DIR/intellij-idea.desktop" ]]; }
 is_installed_rider() { [[ -x "$BIN_DIR/rider" && -f "$DESKTOP_DIR/rider.desktop" ]]; }
@@ -221,7 +245,9 @@ EOF
 
 install_appimage() {
   local archive="$1" app_name="$2" launcher_name="$3" wm_class="$4" categories="$5" icon_hint="$6"
+  local preserve_launcher="${7:-0}"
   local target_parent="$INSTALL_ROOT/apps/$launcher_name" install_dir appimage_target icon_path
+  local bin_path="$BIN_DIR/$launcher_name" desktop_path="$DESKTOP_DIR/$launcher_name.desktop"
 
   install_dir="$target_parent/current"
   appimage_target="$install_dir/$launcher_name.AppImage"
@@ -232,17 +258,25 @@ install_appimage() {
 
   icon_path="$(extract_appimage_icon "$appimage_target" "$install_dir" "$icon_hint" || true)"
 
-  cat > "$BIN_DIR/$launcher_name" <<EOF
+  if [[ -n "${icon_path:-}" && "$launcher_name" == cursor ]]; then
+    install_icon_to_theme "$icon_path" "$icon_hint" || true
+  fi
+
+  if [[ "$preserve_launcher" == 1 && -e "$bin_path" && -e "$desktop_path" ]]; then
+    echo "Using existing launcher from dotfiles (stow $launcher_name)."
+  else
+    cat > "$bin_path" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 exec "\$HOME/.local/opt/apps/$launcher_name/current/$launcher_name.AppImage" --appimage-extract-and-run "\$@"
 EOF
-  chmod +x "$BIN_DIR/$launcher_name"
+    chmod +x "$bin_path"
 
-  if [[ -n "${icon_path:-}" ]]; then
-    write_desktop_file "$launcher_name" "$app_name" "$BIN_DIR/$launcher_name" "$icon_path" "$wm_class" "$categories"
-  else
-    write_desktop_file "$launcher_name" "$app_name" "$BIN_DIR/$launcher_name" "$icon_hint" "$wm_class" "$categories"
+    if [[ -n "${icon_path:-}" ]]; then
+      write_desktop_file "$launcher_name" "$app_name" "$bin_path" "$icon_path" "$wm_class" "$categories"
+    else
+      write_desktop_file "$launcher_name" "$app_name" "$bin_path" "$icon_hint" "$wm_class" "$categories"
+    fi
   fi
 
   echo "Installed $app_name from $archive"
@@ -373,7 +407,7 @@ main() {
         archive="$(find_one_regex "$APP_REGEX_cursor" || true)"
         if [[ -n "$archive" ]]; then
           if [[ "${archive,,}" == *.appimage ]]; then
-            install_appimage "$archive" "Cursor" cursor Cursor "Development;IDE;" cursor
+            install_appimage "$archive" "Cursor" cursor Cursor "Development;IDE;" cursor 1
           else
             echo "Cursor tarball support is not implemented yet for $archive"
           fi

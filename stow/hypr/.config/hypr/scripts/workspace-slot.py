@@ -65,7 +65,11 @@ def maybe_move_workspace(target_workspace, monitor_name):
             continue
         if workspace.get("monitor") == monitor_name:
             return
-        run("hyprctl", "dispatch", "moveworkspacetomonitor", str(target_workspace), monitor_name)
+        run(
+            "hyprctl",
+            "dispatch",
+            f'hl.dsp.workspace.move({{ workspace = {target_workspace}, monitor = "{monitor_name}" }})',
+        )
         return
 
 
@@ -92,9 +96,9 @@ def main():
 
     if sys.argv[1] == "switch":
         maybe_move_workspace(target_workspace, monitor_name)
-        run("hyprctl", "dispatch", "workspace", str(target_workspace))
+        run("hyprctl", "dispatch", f"hl.dsp.focus({{ workspace = {target_workspace} }})")
     else:
-        run("hyprctl", "dispatch", "movetoworkspace", str(target_workspace))
+        run("hyprctl", "dispatch", f"hl.dsp.window.move({{ workspace = {target_workspace} }})")
 
 
 if __name__ == "__main__":
