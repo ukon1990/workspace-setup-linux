@@ -1,8 +1,9 @@
 import json
 import time
 from pathlib import Path
-from .common import classes, clamp, perf_text, push_history, run, use_compact_perf_text
-from .formatting import compact_rate, human_bytes, human_rate
+from ..common import classes, clamp, perf_text, push_history, run, use_compact_perf_text
+from ..formatting import compact_rate, human_bytes, human_rate
+from .apps import app_tooltip
 
 
 def ip_json(*args):
@@ -44,7 +45,7 @@ def network_module(state):
     iface = route.get('dev')
     if not iface:
         state.pop('net_prev', None)
-        return {'text': '󰖪 off', 'tooltip': 'No active network interface', 'class': classes('metric', 'muted')}
+        return {'text': '󰖪 off', 'tooltip': '\n'.join(['No active network interface', *app_tooltip(None)]), 'class': classes('metric', 'muted')}
     base = Path('/sys/class/net') / iface
     try:
         rx = int((base / 'statistics/rx_bytes').read_text())
@@ -72,6 +73,7 @@ def network_module(state):
               f'Down: {human_rate(down)}', f'Up: {human_rate(up)}',
               f'Received: {human_bytes(rx)}', f'Sent: {human_bytes(tx)}',
               'Totals since interface counters started/reset']
+    lines.extend(app_tooltip(iface))
     combined = down + up
     history = push_history(state, 'net_history', clamp(combined / (1024 * 1024 * 2) * 100))
     compact = use_compact_perf_text(state)

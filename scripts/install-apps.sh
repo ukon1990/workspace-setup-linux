@@ -60,10 +60,6 @@ Then run this script again to install them.
 EOF
 }
 
-ensure_dirs() {
-  mkdir -p "$INSTALL_ROOT" "$BIN_DIR" "$DESKTOP_DIR"
-}
-
 find_one_regex() {
   local regex="$1"
   local file base
@@ -75,89 +71,6 @@ find_one_regex() {
     fi
   done < <(find "$DOWNLOAD_DIR" -maxdepth 1 -type f | sort)
   return 1
-}
-
-write_desktop_file() {
-  local filename="$1"
-  local name="$2"
-  local exec_path="$3"
-  local icon_value="$4"
-  local startup_class="$5"
-  local categories="$6"
-
-  cat > "$DESKTOP_DIR/$filename.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=$name
-Exec=$exec_path %U
-Icon=$icon_value
-Terminal=false
-Categories=$categories
-StartupWMClass=$startup_class
-EOF
-}
-
-extract_tarball() {
-  local archive="$1"
-  local dest_parent="$2"
-  local top
-
-  top="$(tar -tzf "$archive" | head -n 1 | cut -d/ -f1)"
-  [[ -n "$top" ]] || { echo "Could not determine archive root: $archive"; return 1; }
-
-  mkdir -p "$dest_parent"
-  tar -xzf "$archive" -C "$dest_parent"
-  printf '%s\n' "$dest_parent/$top"
-}
-
-extract_appimage_icon() {
-  local appimage="$1"
-  local dest_dir="$2"
-  local name_hint="$3"
-  local tmpdir icon icon_ext dest_icon
-
-  tmpdir="$(mktemp -d)"
-  if ! (cd "$tmpdir" && "$appimage" --appimage-extract >/dev/null 2>&1); then
-    rm -rf "$tmpdir"
-    return 1
-  fi
-
-  icon="$(find "$tmpdir/squashfs-root" -type f \( -iname '*.png' -o -iname '*.svg' -o -iname '*.xpm' \) | sort | head -n 1 || true)"
-  if [[ -z "$icon" ]]; then
-    rm -rf "$tmpdir"
-    return 1
-  fi
-
-  mkdir -p "$dest_dir"
-  icon_ext="${icon##*.}"
-  dest_icon="$dest_dir/${name_hint}.${icon_ext}"
-  cp -f "$icon" "$dest_icon"
-  rm -rf "$tmpdir"
-  printf '%s\n' "$dest_icon"
-}
-
-install_icon_to_theme() {
-  local icon_path="$1"
-  local icon_name="$2"
-  local theme_dir icon_ext dest
-
-  icon_ext="${icon_path##*.}"
-  case "${icon_ext,,}" in
-    png|xpm)
-      theme_dir="$HOME/.local/share/icons/hicolor/256x256/apps"
-      dest="$theme_dir/${icon_name}.png"
-      ;;
-    svg)
-      theme_dir="$HOME/.local/share/icons/hicolor/scalable/apps"
-      dest="$theme_dir/${icon_name}.svg"
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-
-  mkdir -p "$theme_dir"
-  cp -f "$icon_path" "$dest"
 }
 
 is_installed_warp() { command -v warp-terminal >/dev/null 2>&1 || [[ -f "$DESKTOP_DIR/warp-terminal.desktop" ]]; }
@@ -182,104 +95,31 @@ install_warp_pkg() {
   fi
 }
 
+# Invoke the repository copy so bootstrap does not depend on Stow having run.
+APP_INSTALL="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../stow/scripts/scripts" && pwd)/app-install"
+export INSTALL_ROOT BIN_DIR DESKTOP_DIR
+
 install_jetbrains_tarball() {
-  local archive="$1" app_name="$2" launcher_name="$3" binary_name="$4" icon_name="$5" wm_class="$6" categories="$7"
-  local target_parent="$INSTALL_ROOT/jetbrains/$launcher_name" install_dir
-
-  install_dir="$(extract_tarball "$archive" "$target_parent")"
-  ln -sfn "$install_dir" "$target_parent/current"
-
-  cat > "$BIN_DIR/$launcher_name" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-_base="\$HOME/.local/opt/jetbrains/$launcher_name/current/bin"
-if [[ -x "\$_base/$binary_name" ]]; then
-  exec "\$_base/$binary_name" "\$@"
-elif [[ -x "\$_base/${binary_name}.sh" ]]; then
-  exec "\$_base/${binary_name}.sh" "\$@"
-fi
-echo "$app_name: no launcher in \$_base (expected $binary_name or ${binary_name}.sh)" >&2
-exit 1
-EOF
-  chmod +x "$BIN_DIR/$launcher_name"
-
-  write_desktop_file "$launcher_name" "$app_name" "$BIN_DIR/$launcher_name" "$target_parent/current/bin/$icon_name" "$wm_class" "$categories"
-  echo "Installed $app_name from $archive"
+  local archive="$1" app_name="$2" launcher_name="$3" binary_name="$4" wm_class="$6" categories="$7"
+  "$APP_INSTALL" "$archive" --name "$app_name" --id "$launcher_name" --subdir jetbrains \
+    --exec "bin/$binary_name" --exec "bin/${binary_name}.sh" \
+    --startup-class "$wm_class" --categories "$categories"
 }
 
 install_gitkraken_tarball() {
-  local archive="$1"
-  local target_parent="$INSTALL_ROOT/apps/gitkraken" install_dir icon_path
-
-  install_dir="$(extract_tarball "$archive" "$target_parent")"
-  ln -sfn "$install_dir" "$target_parent/current"
-
-  cat > "$BIN_DIR/gitkraken" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-APP_DIR="$HOME/.local/opt/apps/gitkraken/current"
-if [[ -x "$APP_DIR/gitkraken" ]]; then
-  exec_file="$APP_DIR/gitkraken"
-elif [[ -x "$APP_DIR/resources/bin/gitkraken.sh" ]]; then
-  exec_file="$APP_DIR/resources/bin/gitkraken.sh"
-else
-  exec_file="$(find "$APP_DIR" -type f -perm -111 | sort | head -n 1 || true)"
-fi
-if [[ -z "${exec_file:-}" ]]; then
-  echo "Could not find a GitKraken executable in $APP_DIR" >&2
-  exit 1
-fi
-exec "$exec_file" "$@"
-EOF
-  chmod +x "$BIN_DIR/gitkraken"
-
-  if [[ -f "$target_parent/current/gitkraken.png" ]]; then
-    icon_path="$target_parent/current/gitkraken.png"
-  else
-    icon_path="$(find "$target_parent/current" -type f \( -iname '*.png' -o -iname '*.svg' -o -iname '*.xpm' \) | sort | head -n 1 || true)"
-  fi
-  [[ -n "$icon_path" ]] || icon_path="gitkraken"
-  write_desktop_file "gitkraken" "GitKraken" "$BIN_DIR/gitkraken" "$icon_path" "gitkraken" "Development;IDE;"
-  echo "Installed GitKraken from $archive"
+  "$APP_INSTALL" "$1" --name GitKraken --id gitkraken \
+    --exec gitkraken --exec resources/bin/gitkraken.sh \
+    --startup-class gitkraken --categories 'Development;IDE;'
 }
 
 install_appimage() {
-  local archive="$1" app_name="$2" launcher_name="$3" wm_class="$4" categories="$5" icon_hint="$6"
-  local preserve_launcher="${7:-0}"
-  local target_parent="$INSTALL_ROOT/apps/$launcher_name" install_dir appimage_target icon_path
-  local bin_path="$BIN_DIR/$launcher_name" desktop_path="$DESKTOP_DIR/$launcher_name.desktop"
-
-  install_dir="$target_parent/current"
-  appimage_target="$install_dir/$launcher_name.AppImage"
-
-  mkdir -p "$install_dir"
-  cp -f "$archive" "$appimage_target"
-  chmod +x "$appimage_target"
-
-  icon_path="$(extract_appimage_icon "$appimage_target" "$install_dir" "$icon_hint" || true)"
-
-  if [[ -n "${icon_path:-}" && "$launcher_name" == cursor ]]; then
-    install_icon_to_theme "$icon_path" "$icon_hint" || true
+  local archive="$1" app_name="$2" launcher_name="$3" wm_class="$4" categories="$5"
+  local opts=()
+  if [[ "${7:-0}" == 1 ]]; then
+    opts+=(--preserve-launcher)
   fi
-
-  if [[ "$preserve_launcher" == 1 && -e "$bin_path" && -e "$desktop_path" ]]; then
-    echo "Using existing launcher from dotfiles (stow $launcher_name)."
-  else
-    cat > "$bin_path" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-exec "\$HOME/.local/opt/apps/$launcher_name/current/$launcher_name.AppImage" --appimage-extract-and-run "\$@"
-EOF
-    chmod +x "$bin_path"
-
-    if [[ -n "${icon_path:-}" ]]; then
-      write_desktop_file "$launcher_name" "$app_name" "$bin_path" "$icon_path" "$wm_class" "$categories"
-    else
-      write_desktop_file "$launcher_name" "$app_name" "$bin_path" "$icon_hint" "$wm_class" "$categories"
-    fi
-  fi
-
-  echo "Installed $app_name from $archive"
+  "$APP_INSTALL" "$archive" --name "$app_name" --id "$launcher_name" \
+    --startup-class "$wm_class" --categories "$categories" "${opts[@]}"
 }
 
 prompt_category() {
@@ -339,7 +179,6 @@ main() {
   esac
 
   [[ -d "$DOWNLOAD_DIR" ]] || { echo "Download directory not found: $DOWNLOAD_DIR"; print_links; exit 1; }
-  ensure_dirs
 
   local selected selected_dev selected_games raw_dev raw_games
   raw_dev="$(prompt_category "System + Development apps" warp intellij rider cursor gitkraken)"
@@ -409,7 +248,8 @@ main() {
           if [[ "${archive,,}" == *.appimage ]]; then
             install_appimage "$archive" "Cursor" cursor Cursor "Development;IDE;" cursor 1
           else
-            echo "Cursor tarball support is not implemented yet for $archive"
+            "$APP_INSTALL" "$archive" --name Cursor --id cursor --exec cursor --exec bin/cursor \
+              --startup-class Cursor --categories "Development;IDE;"
           fi
         else
           installed="$(is_installed_cursor && echo yes || echo no)"

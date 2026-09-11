@@ -58,6 +58,40 @@ This repo is meant to be **public-safe**:
    If `whiptail` is missing, it falls back to a non-interactive install-all mode.
 7. Reboot / log out and back in
 
+## Install or update a downloaded app
+
+After `restow scripts fish`, use `app-install` from Fish in any directory.
+From another shell, use `~/scripts/app-install` directly. The installer requires
+Python 3.12 or newer; `.tar.zst` also requires `zstd`.
+
+```bash
+app-install ./Something.AppImage
+app-install ./Something-2.0.AppImage --name Something --icon ./something.svg
+app-install ./Something-3.0.AppImage --update
+app-install ./Something.tar.gz --name Something --exec bin/something
+app-install ./Something.AppImage --dry-run
+```
+
+- `--name` defaults to the filename without its extension. Use a stable name for
+  versioned downloads: the same name updates the same app.
+- `--update` selects an existing app of the same type, including installations
+  made by `install-apps.sh`. It uses a dialog or numbered terminal menu. Supply
+  `--name Something` with `--update` to select an existing app without prompting.
+- Icons persist across updates. `--icon` explicitly replaces the saved icon;
+  otherwise new installs try bundled icons and fall back to a generic icon.
+- Tarball launchers are detected when unambiguous. Use `--exec` relative to the
+  app root (after removing a single enclosing directory) when necessary.
+- Supported files: AppImage, `.tar`, `.tar.gz`, `.tgz`, `.tar.xz`, `.tar.bz2`,
+  and `.tar.zst`. These must be runnable app bundles, not source distributions.
+
+Apps install under `~/.local/opt/apps`, with commands in `~/.local/bin` and
+desktop entries in `~/.local/share/applications`. `INSTALL_ROOT`, `BIN_DIR`, and
+`DESKTOP_DIR` override these locations. Existing JetBrains paths are preserved.
+Source downloads are untouched. Previous payloads remain in the app directory
+as `release-*` or `legacy-*`; they can be removed once no longer needed or running.
+AppImage icon discovery runs the bundle's extraction command, so use trusted
+downloads just as you would when launching an AppImage.
+
 ## Download links
 Run:
 ```bash
