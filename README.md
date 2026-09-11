@@ -9,26 +9,27 @@ This repo is meant to be **public-safe**:
 - no browser profiles or cache
 
 ## What lives here
-- Hyprland config
-- Waybar config
-- Mako config
-- theme manager + palettes
-- shell config
+- Hyprland / Waybar / theme stack (Linux)
+- Neovim config (shared Linux + macOS)
+- shell config (fish / zsh)
 - gh config
-- sherlock config
-- lxqt + policykit session config
+- sherlock / lxqt session config (Linux)
 - package lists for reinstalling apps on a fresh system
-- vendor app installer for downloaded tar.gz/AppImage files
+- vendor app installer for downloaded tar.gz/AppImage files (Linux)
 - shell tool installer for nvm, Node 25, npm globals, SDKMAN, Java 25.0.2-amzn, rbenv, and Ruby
 
 ## Structure
 - `stow/` — actual dotfiles, grouped by package
 - `packages/` — package manifests for reinstalling apps
 - `scripts/` — helper scripts
-- `bootstrap.sh` — one-shot setup script
+- `bootstrap.sh` — OS router (Linux → `bootstrap-linux.sh`, macOS → `bootstrap-macos.sh`)
+
+## Stow packages by OS
+- **Shared** (`packages/stow-shared.txt`): `nvim`, `fish`, `zsh`, `gh`, `scripts`
+- **Linux only** (`packages/stow-linux.txt`): `hypr`, `waybar`, `lxqt`, `sherlock`, `themes`, `cursor`
 
 ## Fresh install flow
-1. Install base OS
+1. Install base OS (Arch/CachyOS/… or macOS)
 2. Clone this repo
 3. Run:
    ```bash
@@ -42,21 +43,29 @@ This repo is meant to be **public-safe**:
    ```bash
    ./bootstrap.sh --dry-run
    ```
-4. In bootstrap, the setup runs in this order:
-   - repo packages: `common.txt` -> `hyprland.txt` -> `apps.txt` -> `aur.txt`
-   - shell tools: `nvm` -> Node.js 25 -> npm globals -> `SDKMAN` -> Java `25.0.2-amzn` -> `rbenv` Ruby `3.4.9`
-   - link configs into your home directory
-   - vendor apps from `~/Nedlastinger`
-5. Download vendor apps into `~/Nedlastinger`
-   - **IntelliJ IDEA / Rider:** On each JetBrains product page, pick **Linux** and download the **`.tar.gz`** archive (not Toolbox unless you install that separately). Typical filenames: `ideaIU-*.tar.gz` or `ideaIC-*.tar.gz` for IDEA, `JetBrains.Rider-*.tar.gz` or `rider-*.tar.gz` for Rider. The installer unpacks to `~/.local/opt/jetbrains/<app>/current/` and wires `~/.local/bin` plus desktop entries to the native **`bin/idea`** / **`bin/rider`** launchers (falls back to `.sh` only if the native binary is missing).
-6. Run:
-   ```bash
-   ./scripts/install-apps.sh --yes
-   ```
-   This installs all detected vendor apps without prompting.
-   Without `--yes`, it opens categorized checklists with everything selected by default.
-   If `whiptail` is missing, it falls back to a non-interactive install-all mode.
-7. Reboot / log out and back in
+
+### Linux (`bootstrap-linux.sh`)
+Order:
+- repo packages: `common.txt` -> `hyprland.txt` -> `apps.txt` -> `aur.txt`
+- shell tools: `nvm` -> Node.js 25 -> npm globals -> `SDKMAN` -> Java `25.0.2-amzn` -> `rbenv` Ruby `3.4.9`
+- link shared + Linux-only configs
+- vendor apps from `~/Nedlastinger`
+
+Then download vendor apps into `~/Nedlastinger` and run:
+```bash
+./scripts/install-apps.sh --yes
+```
+- **IntelliJ IDEA / Rider:** On each JetBrains product page, pick **Linux** and download the **`.tar.gz`** archive (not Toolbox unless you install that separately). Typical filenames: `ideaIU-*.tar.gz` or `ideaIC-*.tar.gz` for IDEA, `JetBrains.Rider-*.tar.gz` or `rider-*.tar.gz` for Rider. The installer unpacks to `~/.local/opt/jetbrains/<app>/current/` and wires `~/.local/bin` plus desktop entries to the native **`bin/idea`** / **`bin/rider`** launchers (falls back to `.sh` only if the native binary is missing).
+Without `--yes`, it opens categorized checklists with everything selected by default.
+If `whiptail` is missing, it falls back to a non-interactive install-all mode.
+Reboot / log out and back in when the desktop stack is ready.
+
+### macOS (`bootstrap-macos.sh`)
+Order:
+- Homebrew formulas from `packages/brew.txt` (includes `neovim`, `rbenv`, `ruby-build`, …)
+- Ollama via `brew install --cask ollama`
+- shell tools: same `install-shell-tools.sh` as Linux
+- link **shared** stow packages only (`--apps` is skipped on macOS)
 
 ## Install or update a downloaded app
 
@@ -223,13 +232,15 @@ Config to keep in dotfiles:
 - The Hyprland polkit rule in `stow/hypr/.config/hypr/polkit/49-sddm-switch-user.rules` is intentional, but it is security-sensitive; review it before applying it on another machine.
 - The repo is designed to be extended over time.
 - If you want a machine-specific config, add a separate package or script.
+- Neovim config lives in `stow/nvim` and is linked on both OSes.
 - `packages/local-installs.md` lists local non-pacman installs like Warp Terminal.
 - `kitty` has no config file in your current setup, so it is not included yet.
 - run `./scripts/install-shell-tools.sh` if you want nvm + Node + SDKMAN + Java + rbenv Ruby without going through bootstrap.
+- On macOS, run `./scripts/install-brew-packages.sh` for Homebrew formulas only.
 - nvm installs to `~/.config/nvm` on this setup.
 - Node.js 25 is installed by default after nvm.
 - global npm packages are listed in `packages/npm-global.txt`.
-- `rbenv` and `ruby-build` are installed from repo packages, and `./scripts/install-shell-tools.sh` installs Ruby `3.4.9` by default.
+- `rbenv` and `ruby-build` come from Linux repo packages or Homebrew; `./scripts/install-shell-tools.sh` installs Ruby `3.4.9` by default.
 - To install the newest stable Ruby instead, run `RUBY_VERSION=latest ./scripts/install-shell-tools.sh`.
-- `bootstrap.sh --yes` runs all stages without prompts.
+- `bootstrap.sh --yes` runs all stages without prompts (OS-appropriate set).
 - `bootstrap.sh --dry-run` prints the planned actions without changing anything.

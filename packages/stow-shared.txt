@@ -1,0 +1,6 @@
+# Stow packages linked on both Linux and macOS
+nvim
+fish
+zsh
+gh
+scripts

@@ -1,0 +1,7 @@
+# Stow packages linked on Linux only (Hyprland / desktop stack)
+hypr
+waybar
+lxqt
+sherlock
+themes
+cursor

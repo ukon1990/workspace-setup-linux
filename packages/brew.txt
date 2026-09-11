@@ -1,0 +1,12 @@
+# Homebrew formulas for macOS bootstrap
+# Keep this curated and broadly useful for a fresh Mac.
+git
+curl
+stow
+unzip
+zip
+neovim
+rbenv
+ruby-build
+gh
+fish

@@ -5,6 +5,7 @@ curl
 stow
 unzip
 zip
+neovim
 yay
 rbenv
 ruby-build
