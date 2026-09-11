@@ -1,9 +1,13 @@
 import re
-from .common import classes, clamp, run, use_compact_perf_text
+
+from .common import clamp, classes, run, use_compact_perf_text
+
 
 def volume_bar(percent):
     filled = int(round(clamp(percent) / 100 * 8))
     return "▁▂▃▄▅▆▇█"[max(0, filled - 1)] if filled else "·"
+
+
 def inspect_value(output, names):
     for name in names:
         match = re.search(rf"{re.escape(name)}\s*=\s*\"([^\"]+)\"", output)

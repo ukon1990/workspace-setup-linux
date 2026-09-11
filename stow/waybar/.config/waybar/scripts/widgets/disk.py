@@ -2,8 +2,10 @@ import os
 import shutil
 import time
 from pathlib import Path
-from .common import classes, clamp, push_history, perf_text, use_compact_perf_text
+
+from .common import clamp, classes, perf_text, push_history, use_compact_perf_text
 from .formatting import human_rate
+
 
 def root_device():
     root_source = None

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
+import json
+import os
 import subprocess
 import sys
-import os
-import json
 from pathlib import Path
+
 
 def get_current_branch():
     try:
@@ -12,12 +13,13 @@ def get_current_branch():
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             check=True,
             stdout=subprocess.PIPE,
-            text=True
+            text=True,
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
         print(f"Error: Unable to determine the current branch: {e}")
         sys.exit(1)
+
 
 def get_changed_files(directory, target_branch, source_branch):
     try:
@@ -25,16 +27,22 @@ def get_changed_files(directory, target_branch, source_branch):
         # Fetch the latest changes from origin
         subprocess.run(["git", "fetch", "origin"], check=True)
 
-        print(f"Getting the list of changed files between {target_branch} (target) and {source_branch} (source)...")
+        print(
+            f"Getting the list of changed files between {target_branch} (target) and {source_branch} (source)..."
+        )
         # Get the list of changed files
         result = subprocess.run(
             [
-                "git", "diff", "--name-only", f"origin/{target_branch}..origin/{source_branch}",
-                "--", directory
+                "git",
+                "diff",
+                "--name-only",
+                f"origin/{target_branch}..origin/{source_branch}",
+                "--",
+                directory,
             ],
             check=True,
             stdout=subprocess.PIPE,
-            text=True
+            text=True,
         )
 
         changed_files = result.stdout.strip().split("\n")
@@ -45,6 +53,7 @@ def get_changed_files(directory, target_branch, source_branch):
         print(f"Error: {e}")
         sys.exit(1)
 
+
 def collect_changes(directory, target_branch, source_branch):
     files = get_changed_files(directory, target_branch, source_branch)
     changes = {}
@@ -54,12 +63,10 @@ def collect_changes(directory, target_branch, source_branch):
             print(f"Processing file {index}/{len(files)}: {file}")
             # Get the diff for each file
             result = subprocess.run(
-                [
-                    "git", "diff", f"origin/{target_branch}..origin/{source_branch}", "--", file
-                ],
+                ["git", "diff", f"origin/{target_branch}..origin/{source_branch}", "--", file],
                 check=True,
                 stdout=subprocess.PIPE,
-                text=True
+                text=True,
             )
             changes[file] = result.stdout.strip()
         except subprocess.CalledProcessError as e:
@@ -67,27 +74,31 @@ def collect_changes(directory, target_branch, source_branch):
 
     return changes
 
+
 def open_changes_in_vscode_or_save(changes):
     temp_file = "changes_temp.json"
     try:
         if not changes:
             print("No changes detected. Skipping file creation and opening in Visual Studio Code.")
             return
-        
+
         print(f"Writing changes to temporary file: {temp_file}")
         with open(temp_file, "w") as f:
             json.dump(changes, f, indent=4)
-        
+
         print(f"File {temp_file} created. Attempting to open in Visual Studio Code...")
         # Use shell=True to make subprocess respect shell commands like 'code'
         subprocess.run(["code", temp_file], check=True)
-        print(f"Successfully opened {temp_file} in Visual Studio Code. Temporary file will not be deleted automatically.")
+        print(
+            f"Successfully opened {temp_file} in Visual Studio Code. Temporary file will not be deleted automatically."
+        )
     except FileNotFoundError:
         print("Visual Studio Code is not installed or not found in PATH.")
         save_changes_to_downloads(changes)
     except subprocess.CalledProcessError as e:
         print(f"Error opening Visual Studio Code: {e}")
         save_changes_to_downloads(changes)
+
 
 def save_changes_to_downloads(changes):
     downloads_dir = Path.home() / "Downloads"
@@ -99,6 +110,7 @@ def save_changes_to_downloads(changes):
         print(f"Changes successfully saved to {output_file}")
     except IOError as e:
         print(f"Error saving changes to file: {e}")
+
 
 if __name__ == "__main__":
     if len(sys.argv) == 2:
@@ -123,7 +135,9 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print(f"Starting to collect changes in directory: {directory}")
-    print(f"Source branch (PR branch): {source_branch}, Target branch (default: develop): {target_branch}")
+    print(
+        f"Source branch (PR branch): {source_branch}, Target branch (default: develop): {target_branch}"
+    )
 
     changes = collect_changes(directory, target_branch, source_branch)
 

@@ -1,5 +1,7 @@
 import shutil
+
 from .common import classes, run
+
 
 def _mmss(seconds: int) -> str:
     seconds = max(0, int(seconds))
@@ -57,14 +59,16 @@ def media_module(_state):
     player_args = ["--player", player]
 
     sep = "\x1f"
-    fmt = sep.join([
-        "{{status}}",
-        "{{playerName}}",
-        "{{artist}}",
-        "{{title}}",
-        "{{album}}",
-        "{{mpris:length}}",
-    ])
+    fmt = sep.join(
+        [
+            "{{status}}",
+            "{{playerName}}",
+            "{{artist}}",
+            "{{title}}",
+            "{{album}}",
+            "{{mpris:length}}",
+        ]
+    )
     result = run(["playerctl", *player_args, "metadata", "--format", fmt])
     if result.returncode != 0 or not result.stdout.strip():
         return _HIDDEN_MEDIA

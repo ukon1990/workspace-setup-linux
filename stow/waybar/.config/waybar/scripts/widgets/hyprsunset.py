@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
 from .common import run
 
 HYPRSUNSET_CONF = Path.home() / ".config" / "hypr" / "hyprsunset.conf"
@@ -97,6 +98,7 @@ def _write_schedule(start_hhmm, end_hhmm, night_temp, night_gamma):
 
 def _next_transition(now, start_hhmm, end_hhmm):
     """Return (label, hhmm) of the next schedule transition from `now`."""
+
     def _minutes(hhmm):
         h, m = hhmm.split(":")
         return int(h) * 60 + int(m)
@@ -152,7 +154,9 @@ def hyprsunset_module(state):
     else:
         tooltip_lines.append("Sunset: off (identity)")
 
-    tooltip_lines.append(f"Schedule: {start} \u2192 {end}  ({night_temp} K, \u03b3 {night_gamma:g})")
+    tooltip_lines.append(
+        f"Schedule: {start} \u2192 {end}  ({night_temp} K, \u03b3 {night_gamma:g})"
+    )
     if now is not None:
         label, hhmm = _next_transition(now, start, end)
         tooltip_lines.append(f"Next: {label} at {hhmm}")
@@ -265,8 +269,7 @@ def hyprsunset_schedule(state, _argv):
 
     if not shutil.which("yad"):
         sys.stderr.write(
-            "status_widgets.py hyprsunset-schedule: `yad` not installed. "
-            "Run: sudo pacman -S yad\n"
+            "status_widgets.py hyprsunset-schedule: `yad` not installed. Run: sudo pacman -S yad\n"
         )
         return
 

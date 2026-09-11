@@ -31,7 +31,11 @@ def best_mode(modes, width=None):
 
 
 def choose_main_mode(monitor):
-    modes = [parsed for parsed in (parse_mode(mode) for mode in monitor.get("availableModes", [])) if parsed]
+    modes = [
+        parsed
+        for parsed in (parse_mode(mode) for mode in monitor.get("availableModes", []))
+        if parsed
+    ]
     if not modes:
         return "preferred"
 
@@ -66,7 +70,11 @@ def choose_main_mode(monitor):
 
 
 def choose_secondary_mode(monitor):
-    modes = [parsed for parsed in (parse_mode(mode) for mode in monitor.get("availableModes", [])) if parsed]
+    modes = [
+        parsed
+        for parsed in (parse_mode(mode) for mode in monitor.get("availableModes", []))
+        if parsed
+    ]
     if not modes:
         return "preferred"
 
@@ -98,7 +106,9 @@ def main():
     if main_monitor:
         main_refresh = float(main_monitor.get("refreshRate", 0.0))
         state_parts.append(
-            "{}:{}x{}@{:.3f}".format(main_name, main_monitor["width"], main_monitor["height"], main_refresh)
+            "{}:{}x{}@{:.3f}".format(
+                main_name, main_monitor["width"], main_monitor["height"], main_refresh
+            )
         )
         main_mode = choose_main_mode(main_monitor)
         commands.append("{}, {}, 0x0, 1".format(main_name, main_mode))
@@ -115,7 +125,10 @@ def main():
         secondary_refresh = float(secondary_monitor.get("refreshRate", 0.0))
         state_parts.append(
             "{}:{}x{}@{:.3f}".format(
-                secondary_name, secondary_monitor["width"], secondary_monitor["height"], secondary_refresh
+                secondary_name,
+                secondary_monitor["width"],
+                secondary_monitor["height"],
+                secondary_refresh,
             )
         )
         secondary_mode = choose_secondary_mode(secondary_monitor)

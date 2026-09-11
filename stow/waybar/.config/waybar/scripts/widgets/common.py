@@ -1,4 +1,5 @@
 """Shared rendering, monitor detection and bounded metric commands."""
+
 import json
 import os
 import subprocess

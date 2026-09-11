@@ -96,7 +96,7 @@ install_warp_pkg() {
 }
 
 # Invoke the repository copy so bootstrap does not depend on Stow having run.
-APP_INSTALL="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../stow/scripts/scripts" && pwd)/app-install"
+APP_INSTALL="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../stow/scripts/scripts" && pwd)/app-install.sh"
 export INSTALL_ROOT BIN_DIR DESKTOP_DIR
 
 install_jetbrains_tarball() {

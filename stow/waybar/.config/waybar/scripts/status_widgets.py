@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """Stable command entry point for the independently loaded Waybar widgets."""
+
 import html
 import importlib
 import json
 import sys
+
 from widgets.state import transaction
 
-MODULES = {name: (name, name + "_module") for name in (
-    "cpu", "memory", "network", "disk", "gpu", "volume", "media", "hyprsunset"
-)}
-ACTIONS = {f"hyprsunset-{name}": ("hyprsunset", f"hyprsunset_{name}") for name in (
-    "toggle", "adjust", "reset", "menu", "schedule"
-)}
+MODULES = {
+    name: (name, name + "_module")
+    for name in ("cpu", "memory", "network", "disk", "gpu", "volume", "media", "hyprsunset")
+}
+ACTIONS = {
+    f"hyprsunset-{name}": ("hyprsunset", f"hyprsunset_{name}")
+    for name in ("toggle", "adjust", "reset", "menu", "schedule")
+}
 
 
 def dispatch(command, argv):
@@ -38,7 +42,15 @@ def main():
     except Exception as exc:
         print(f"{command}: {exc}", file=sys.stderr)
         if command in MODULES:
-            print(json.dumps({"text": "n/a", "tooltip": f"{command}: metrics unavailable", "class": ["metric", "muted"]}))
+            print(
+                json.dumps(
+                    {
+                        "text": "n/a",
+                        "tooltip": f"{command}: metrics unavailable",
+                        "class": ["metric", "muted"],
+                    }
+                )
+            )
         return 1
     if payload is not None:
         print(json.dumps(payload))

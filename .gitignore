@@ -11,6 +11,8 @@ private/
 *.gpg
 
 # Caches and generated files
+.venv/
+.ruff_cache/
 **/__pycache__/
 **/*.pyc
 **/.cache/

@@ -61,8 +61,13 @@ This repo is meant to be **public-safe**:
 ## Install or update a downloaded app
 
 After `restow scripts fish`, use `app-install` from Fish in any directory.
-From another shell, use `~/scripts/app-install` directly. The installer requires
+From another shell, use `~/scripts/app-install.sh` directly. The installer requires
 Python 3.12 or newer; `.tar.zst` also requires `zstd`.
+
+`app-install.sh` is a small Bash launcher that runs the `app_install` package
+through its `__main__.py`. The package is split into CLI,
+installation, app management, registry, archive, icon, and desktop helpers.
+The command name remains `app-install`; Python source files use `.py` extensions.
 
 ```bash
 app-install ./Something.AppImage
@@ -70,6 +75,13 @@ app-install ./Something-2.0.AppImage --name Something --icon ./something.svg
 app-install ./Something-3.0.AppImage --update
 app-install ./Something.tar.gz --name Something --exec bin/something
 app-install ./Something.AppImage --dry-run
+app-install --rename Something --name Something-2.0
+app-install --rename Something
+app-install --uninstall
+app-install --remove --name Something
+app-install --list
+app-install --edit --name Something --categories "Development;IDE;"
+app-install --edit --categories "Game;"  # select an installed app
 ```
 
 - `--name` defaults to the filename without its extension. Use a stable name for
@@ -81,6 +93,23 @@ app-install ./Something.AppImage --dry-run
   otherwise new installs try bundled icons and fall back to a generic icon.
 - Tarball launchers are detected when unambiguous. Use `--exec` relative to the
   app root (after removing a single enclosing directory) when necessary.
+- `--rename NEW_NAME` changes the display name and launcher command. Pass the
+  current name with `--name`, or omit it to select an installed app. Icons and
+  payload paths are preserved; future updates use the new name.
+- `--list` (or `-l`) shows managed apps with their IDs, bundle types, and desktop
+  categories. Optionally filter by `--name`.
+- `--edit` updates desktop metadata without reinstalling. Supply `--name` or
+  select an app interactively. Supported fields are `--categories`, `--comment`
+  (description), `--keywords`, `--startup-class`, `--icon`, and
+  `--terminal` / `--no-terminal`. Categories and keywords use semicolon-separated
+  lists; quote them in the shell. Empty strings clear text fields. Omitted fields
+  remain unchanged, and `--dry-run` previews changes. Use `--rename` to change
+  the app's name and command.
+- `--uninstall` (alias `--remove`) lists all managed apps to choose from, or
+  removes the app selected by `--name`. It removes the installation directory,
+  including saved icons and previous releases, plus its command and desktop
+  entry. Downloads, app settings outside the installation, and external symlink
+  targets are retained. Rename and removal both support `--dry-run`.
 - Supported files: AppImage, `.tar`, `.tar.gz`, `.tgz`, `.tar.xz`, `.tar.bz2`,
   and `.tar.zst`. These must be runnable app bundles, not source distributions.
 
@@ -91,6 +120,40 @@ Source downloads are untouched. Previous payloads remain in the app directory
 as `release-*` or `legacy-*`; they can be removed once no longer needed or running.
 AppImage icon discovery runs the bundle's extraction command, so use trusted
 downloads just as you would when launching an AppImage.
+
+## Python formatting and linting
+
+Install the pinned development tool in a local virtual environment:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+```
+
+Format all repository Python code and apply safe lint fixes:
+
+```bash
+./scripts/format-python.sh
+```
+
+Check without modifying files (also suitable for CI):
+
+```bash
+./scripts/format-python.sh --check
+```
+
+The script uses the local virtual environment's Ruff, falling back to `ruff` on
+`PATH`. It always runs from the repository root and includes Python under hidden
+Stow directories. Formatting, import sorting, and lint rules are configured in
+`pyproject.toml`; remaining diagnostics must be fixed manually. Editors with
+Ruff integration can use the same configuration for format-on-save.
+
+Run the Python regression suites with:
+
+```bash
+python3 -m unittest discover -s scripts/tests -v
+python3 -m unittest discover -s stow/waybar/.config/waybar/scripts/tests -v
+```
 
 ## Download links
 Run:

@@ -5,7 +5,6 @@ import os
 import subprocess
 import sys
 
-
 SLOTS_PER_MONITOR = int(os.environ.get("WORKSPACE_SLOTS_PER_MONITOR", "5"))
 PREFERRED_MONITORS = [
     os.environ.get("MAIN_MONITOR", "DP-1"),
@@ -76,23 +75,23 @@ def maybe_move_workspace(target_workspace, monitor_name):
 def main():
     if len(sys.argv) != 3 or sys.argv[1] not in {"switch", "move"}:
         print("Usage: workspace-slot.py [switch|move] <slot>", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     try:
         slot = int(sys.argv[2])
     except ValueError:
         print("slot must be an integer", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     if slot < 1 or slot > SLOTS_PER_MONITOR:
         print(f"slot must be between 1 and {SLOTS_PER_MONITOR}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     try:
         monitor_name, target_workspace = workspace_id_for_slot(slot)
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     if sys.argv[1] == "switch":
         maybe_move_workspace(target_workspace, monitor_name)
