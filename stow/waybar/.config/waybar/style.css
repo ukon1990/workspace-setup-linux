@@ -24,6 +24,7 @@ tooltip {
 
 #workspaces,
 #window,
+#custom-kubernetes,
 #clock,
 #custom-cava,
 #custom-media,
@@ -78,6 +79,7 @@ tooltip {
 }
 
 #clock,
+#custom-kubernetes,
 #custom-media,
 #custom-perf-gpu,
 #custom-perf-cpu,
@@ -106,6 +108,7 @@ tooltip {
     border-color: @primary-border-strong;
 }
 
+#custom-kubernetes,
 #custom-media,
 #custom-perf-gpu,
 #custom-perf-cpu,
@@ -117,6 +120,22 @@ tooltip {
 #custom-hyprsunset,
 #idle_inhibitor {
     font-family: "Noto Sans", "Symbols Nerd Font Mono", "Font Awesome 6 Free", FontAwesome;
+}
+
+#custom-kubernetes {
+    min-width: 120px;
+    color: @text;
+    transition: all 0.18s ease;
+}
+
+#custom-kubernetes.warning {
+    color: @on-primary;
+    background: @accent-container;
+    border-color: @outline-strong;
+}
+
+#custom-kubernetes.muted {
+    color: @text-muted-soft;
 }
 
 #custom-perf-gpu,

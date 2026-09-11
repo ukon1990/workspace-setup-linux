@@ -9,6 +9,7 @@
 
     "modules-left": [
         "hyprland/workspaces",
+        "custom/kubernetes",
         "hyprland/window"
     ],
     "modules-center": [
@@ -64,6 +65,14 @@
             "(.*) - Cursor": "$1",
             "(.*) - kitty": "$1"
         }
+    },
+
+    "custom/kubernetes": {
+        "tooltip": true,
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py kubernetes",
+        "return-type": "json",
+        "interval": 30,
+        "on-click": "kitty --hold -e $HOME/scripts/kube-status.sh"
     },
 
     "clock": {

@@ -22,6 +22,25 @@ RSS and can count shared pages more than once. Network totals are interface coun
 not persisted session totals. GPU tooltips list all detected NVIDIA GPUs; the bar
 continues to summarize the first GPU. Missing optional readings show `Unavailable`.
 
+## Kubernetes status
+
+`kubernetes.py` formats Waybar output from `~/scripts/kube-status.sh --json`. The
+collector and terminal report live in the `scripts` package (`kube_status/`), not
+under Waybar. Bar text summarizes ready/active pods (`P`), ready/total Deployments,
+StatefulSets, and DaemonSets (`W`), and pods needing attention (`!`). Completed and
+terminating pods are excluded from the pod ratio; zero-replica workloads are scaled
+down and excluded from the workload ratio. Tooltips group details by namespace and
+cap problem listings at ten entries per namespace. Click opens the full terminal
+report in Kitty. Refresh interval is 30 seconds.
+
+Use the terminal command directly after restowing scripts:
+
+```sh
+kube-status
+kube-status --json
+kube-status --namespace concoctly
+```
+
 ## Per-app network usage
 
 All network-specific source lives in `network/`: `__init__.py` provides the widget,

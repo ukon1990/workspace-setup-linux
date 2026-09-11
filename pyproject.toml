@@ -8,5 +8,6 @@ select = ["E4", "E7", "E9", "F", "I", "B"]
 [tool.ruff.lint.per-file-ignores]
 # These standalone script tests add their script directory to sys.path first.
 "scripts/tests/test_app_install.py" = ["E402"]
+"scripts/tests/test_kube_status.py" = ["E402"]
 "stow/waybar/.config/waybar/scripts/tests/*.py" = ["E402"]
 

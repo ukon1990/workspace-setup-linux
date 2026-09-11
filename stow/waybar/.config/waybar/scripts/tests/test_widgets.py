@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import status_widgets as loader
-from widgets import cpu, gpu, memory, network, processes, state
+from widgets import cpu, gpu, kubernetes, memory, network, processes, state
 from widgets.common import run, use_compact_perf_text
 
 
@@ -172,6 +172,63 @@ class WidgetTests(unittest.TestCase):
             patch("widgets.common.PERF_PRIMARY_MONITOR", "DP-1"),
         ):
             self.assertTrue(use_compact_perf_text({}))
+
+    def test_kubernetes_widget_formats_status(self):
+        problems = [
+            {"kind": "Pod", "name": f"p{i}", "reason": "Pending", "restarts": 0} for i in range(12)
+        ]
+        status = {
+            "context": "demo",
+            "available": True,
+            "partial": False,
+            "errors": [],
+            "warning": True,
+            "pods": {
+                "ready": 1,
+                "active": 2,
+                "attention": 1,
+                "completed": 0,
+                "terminating": 0,
+                "restarts": 0,
+            },
+            "workloads": {"ready": 1, "total": 1, "scaled_down": 0, "attention": 0},
+            "namespaces": [
+                {
+                    "name": "alpha",
+                    "pods": {
+                        "ready": 1,
+                        "active": 2,
+                        "attention": 1,
+                        "completed": 0,
+                        "terminating": 0,
+                        "restarts": 3,
+                    },
+                    "workloads": {"ready": 1, "total": 1, "scaled_down": 0, "attention": 0},
+                    "problems": problems,
+                }
+            ],
+        }
+        with patch.object(kubernetes, "_load_status", return_value=status):
+            payload = kubernetes.kubernetes_module({})
+        self.assertEqual(payload["text"], "󰠳 P 1/2 W 1/1 !1")
+        self.assertIn("warning", payload["class"])
+        self.assertIn("Context: demo", payload["tooltip"])
+        self.assertIn("…and 2 more", payload["tooltip"])
+        with patch.object(
+            kubernetes,
+            "_load_status",
+            return_value={
+                "available": False,
+                "errors": ["no context"],
+                "context": "",
+                "pods": {},
+                "workloads": {},
+                "namespaces": [],
+            },
+        ):
+            muted = kubernetes.kubernetes_module({})
+        self.assertEqual(muted["text"], "󰠳 n/a")
+        self.assertIn("muted", muted["class"])
 
 
 if __name__ == "__main__":

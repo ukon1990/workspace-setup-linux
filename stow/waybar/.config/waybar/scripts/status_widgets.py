@@ -10,7 +10,17 @@ from widgets.state import transaction
 
 MODULES = {
     name: (name, name + "_module")
-    for name in ("cpu", "memory", "network", "disk", "gpu", "volume", "media", "hyprsunset")
+    for name in (
+        "cpu",
+        "memory",
+        "network",
+        "disk",
+        "gpu",
+        "volume",
+        "media",
+        "hyprsunset",
+        "kubernetes",
+    )
 }
 ACTIONS = {
     f"hyprsunset-{name}": ("hyprsunset", f"hyprsunset_{name}")
