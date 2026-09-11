@@ -3,14 +3,14 @@
 These files are meant to help reinstall the same apps on a fresh machine.
 
 ## Linux (pacman / AUR / Flatpak)
-- `common.txt` — tiny bootstrap set (includes `neovim`)
+- `common.txt` — tiny bootstrap set (includes `neovim` + `tree-sitter` lib/CLI for nvim-treesitter builds)
 - `hyprland.txt` — packages needed for the Hyprland desktop
 - `apps.txt` — daily desktop apps I installed manually
 - `aur.txt` — AUR apps installed via `yay` if available
 - `flatpak.txt` — optional Flatpak app IDs
 
 ## macOS (Homebrew)
-- `brew.txt` — Homebrew formulas installed by `scripts/install-brew-packages.sh`
+- `brew.txt` — Homebrew formulas installed by `scripts/install-brew-packages.sh` (includes `tree-sitter` + `tree-sitter-cli`; brew split them the same way Arch did)
 - `brew-casks.txt` — Homebrew casks (e.g. `ollama-app`) installed by the same script
 - Installs are per-package: already-installed items are skipped, optional failures are reported, and only essential formulas (`git`, `stow`, `curl`) hard-fail
 
