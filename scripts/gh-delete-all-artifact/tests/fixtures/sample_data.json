@@ -1,0 +1,70 @@
+{
+  "user": "alice",
+  "filter_mode": "mine",
+  "filter_label": "your repositories only",
+  "scanned_repos": 3,
+  "repos_with_artifacts": 2,
+  "total_artifacts": 4,
+  "total_size": 3000,
+  "owner_summary": [
+    {
+      "owner": "alice",
+      "is_mine": true,
+      "repos": 2,
+      "artifacts": 4,
+      "size": 3000
+    }
+  ],
+  "repos": [
+    {
+      "full_name": "alice/big-repo",
+      "owner": "alice",
+      "is_mine": true,
+      "artifact_count": 3,
+      "total_size": 2500,
+      "old_count": 2,
+      "old_size": 2000,
+      "artifacts": [
+        {
+          "id": 1,
+          "name": "a.zip",
+          "size_in_bytes": 1000,
+          "created_at": "2020-01-01T00:00:00Z",
+          "is_old": true
+        },
+        {
+          "id": 2,
+          "name": "b.zip",
+          "size_in_bytes": 1000,
+          "created_at": "2020-01-02T00:00:00Z",
+          "is_old": true
+        },
+        {
+          "id": 3,
+          "name": "c.zip",
+          "size_in_bytes": 500,
+          "created_at": "2099-01-01T00:00:00Z",
+          "is_old": false
+        }
+      ]
+    },
+    {
+      "full_name": "alice/small-repo",
+      "owner": "alice",
+      "is_mine": true,
+      "artifact_count": 1,
+      "total_size": 500,
+      "old_count": 1,
+      "old_size": 500,
+      "artifacts": [
+        {
+          "id": 4,
+          "name": "d.zip",
+          "size_in_bytes": 500,
+          "created_at": "2020-01-03T00:00:00Z",
+          "is_old": true
+        }
+      ]
+    }
+  ]
+}
