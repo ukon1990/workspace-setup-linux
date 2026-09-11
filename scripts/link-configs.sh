@@ -60,14 +60,82 @@ fi
 
 echo "Linking packages for $os_name:"
 printf ' - %s\n' "${packages[@]}"
+echo
+
+linked=()
+skipped_conflicts=()
+failed=()
+
+stow_pkg() {
+  local pkg="$1"
+  local stow_args=(-d "$STOW_DIR" -t "$HOME")
+  local output=""
+  local status=0
+
+  if [[ "$DRY_RUN" == 1 ]]; then
+    stow_args+=(-n)
+  fi
+
+  echo "==> stow $pkg"
+  set +e
+  output="$(stow "${stow_args[@]}" "$pkg" 2>&1)"
+  status=$?
+  set -e
+
+  if [[ -n "$output" ]]; then
+    printf '%s\n' "$output"
+  fi
+
+  if [[ $status -eq 0 ]]; then
+    if [[ "$DRY_RUN" == 1 ]]; then
+      linked+=("$pkg (dry-run ok)")
+    else
+      linked+=("$pkg")
+    fi
+    return 0
+  fi
+
+  if printf '%s\n' "$output" | grep -qi 'would cause conflicts\|existing target'; then
+    echo "Skipping $pkg due to existing files (not adopting)."
+    skipped_conflicts+=("$pkg")
+    return 0
+  fi
+
+  echo "Failed to stow $pkg (exit $status)"
+  failed+=("$pkg")
+  return 0
+}
+
+for pkg in "${packages[@]}"; do
+  stow_pkg "$pkg"
+  echo
+done
+
+echo '==> Stow link report'
+if [[ ${#linked[@]} -gt 0 ]]; then
+  echo 'Linked:'
+  printf '  - %s\n' "${linked[@]}"
+else
+  echo 'Linked: (none)'
+fi
+if [[ ${#skipped_conflicts[@]} -gt 0 ]]; then
+  echo 'Skipped (conflicts with existing files):'
+  printf '  - %s\n' "${skipped_conflicts[@]}"
+  echo 'Resolve by moving/removing the real files, or restow later with: stow --adopt -d '"$STOW_DIR"' -t '"$HOME"' <pkg>'
+fi
+if [[ ${#failed[@]} -gt 0 ]]; then
+  echo 'Failed:'
+  printf '  - %s\n' "${failed[@]}"
+else
+  echo 'Failed: (none)'
+fi
+
+if [[ ${#failed[@]} -gt 0 ]]; then
+  exit 1
+fi
 
 if [[ "$DRY_RUN" == 1 ]]; then
-  printf 'Would run: stow -d %q -t %q' "$STOW_DIR" "$HOME"
-  for pkg in "${packages[@]}"; do
-    printf ' %q' "$pkg"
-  done
-  printf '\n'
+  echo 'Dry-run stow checks finished.'
 else
-  stow -d "$STOW_DIR" -t "$HOME" "${packages[@]}"
-  echo 'Config links updated.'
+  echo 'Config link pass finished.'
 fi

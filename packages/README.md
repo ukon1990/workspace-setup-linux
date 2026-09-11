@@ -11,7 +11,8 @@ These files are meant to help reinstall the same apps on a fresh machine.
 
 ## macOS (Homebrew)
 - `brew.txt` — Homebrew formulas installed by `scripts/install-brew-packages.sh`
-- Ollama is installed as a **cask** from `bootstrap-macos.sh` (`brew install --cask ollama`), not listed in `brew.txt`
+- `brew-casks.txt` — Homebrew casks (e.g. `ollama-app`) installed by the same script
+- Installs are per-package: already-installed items are skipped, optional failures are reported, and only essential formulas (`git`, `stow`, `curl`) hard-fail
 
 ## Shared
 - `npm-global.txt` — npm packages installed after Node is set up with nvm

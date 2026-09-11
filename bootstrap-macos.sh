@@ -16,7 +16,7 @@ Usage: $(basename "$0") [options]
 macOS bootstrap (also reachable via ./bootstrap.sh).
 
 Options:
-  --packages   Install Homebrew formulas from packages/brew.txt (+ Ollama cask)
+  --packages   Install Homebrew formulas/casks (brew.txt + brew-casks.txt)
   --shell      Install shell tools (nvm -> Node 25 -> npm globals -> SDKMAN -> Java 25.0.2-amzn -> rbenv Ruby)
   --link       Link shared configs into your home directory
   --apps       Skipped on macOS (Linux vendor apps only)
@@ -75,25 +75,20 @@ ensure_homebrew() {
 }
 
 install_base_tools() {
+  local pkg
   ensure_homebrew
   if [[ $DRY_RUN -eq 1 ]]; then
     echo 'Would install base tools via brew: git stow curl'
     return 0
   fi
-  brew install git stow curl
-}
-
-install_ollama() {
-  ensure_homebrew
-  if [[ $DRY_RUN -eq 1 ]]; then
-    echo 'Would install Ollama via: brew install --cask ollama'
-    return 0
-  fi
-  if brew list --cask ollama >/dev/null 2>&1; then
-    echo 'Ollama cask already installed'
-    return 0
-  fi
-  brew install --cask ollama
+  for pkg in git stow curl; do
+    if brew list --formula "$pkg" >/dev/null 2>&1 || command -v "$pkg" >/dev/null 2>&1; then
+      echo "Base tool already available: $pkg"
+      continue
+    fi
+    echo "Installing base tool: $pkg"
+    brew install "$pkg"
+  done
 }
 
 while [[ $# -gt 0 ]]; do
@@ -153,10 +148,9 @@ if [[ $RUN_PACKAGES -eq 0 && $RUN_SHELL -eq 0 && $RUN_LINK -eq 0 ]]; then
 fi
 
 if [[ $RUN_PACKAGES -eq 1 ]]; then
-  if [[ $AUTO_YES -eq 1 ]] || ask_yes_no 'Install Homebrew packages now (brew.txt + Ollama cask)?'; then
+  if [[ $AUTO_YES -eq 1 ]] || ask_yes_no 'Install Homebrew packages now (brew.txt + brew-casks.txt)?'; then
     ensure_homebrew
     run_step 'Installing Homebrew packages' env DRY_RUN="$DRY_RUN" "$ROOT/scripts/install-brew-packages.sh"
-    run_step 'Installing Ollama' install_ollama
   fi
 fi
 

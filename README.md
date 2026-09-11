@@ -62,8 +62,8 @@ Reboot / log out and back in when the desktop stack is ready.
 
 ### macOS (`bootstrap-macos.sh`)
 Order:
-- Homebrew formulas from `packages/brew.txt` (includes `neovim`, `rbenv`, `ruby-build`, …)
-- Ollama via `brew install --cask ollama`
+- Homebrew formulas from `packages/brew.txt` and casks from `packages/brew-casks.txt` (e.g. `ollama-app`)
+- Already-installed brew packages are skipped; optional install failures are reported and do not abort bootstrap (essential: `git`, `stow`, `curl`)
 - shell tools: same `install-shell-tools.sh` as Linux
 - link **shared** stow packages only (`--apps` is skipped on macOS)
 

@@ -1,0 +1,2 @@
+# Homebrew casks for macOS bootstrap (optional; failures are reported, not fatal)
+ollama-app
