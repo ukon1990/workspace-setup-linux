@@ -9,3 +9,4 @@ podman-desktop
 anyrun
 openrazer-daemon
 input-remapper
+kepler
