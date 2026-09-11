@@ -6,6 +6,7 @@ stow
 unzip
 zip
 neovim
+tree-sitter
 rbenv
 ruby-build
 gh
