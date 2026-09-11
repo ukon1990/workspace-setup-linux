@@ -93,24 +93,28 @@
     },
 
     "custom/perf-gpu": {
+        "tooltip": true,
         "exec": "$HOME/.config/waybar/scripts/status_widgets.py gpu",
         "return-type": "json",
         "interval": 3
     },
 
     "custom/perf-cpu": {
+        "tooltip": true,
         "exec": "$HOME/.config/waybar/scripts/status_widgets.py cpu",
         "return-type": "json",
         "interval": 2
     },
 
     "custom/perf-memory": {
+        "tooltip": true,
         "exec": "$HOME/.config/waybar/scripts/status_widgets.py memory",
         "return-type": "json",
         "interval": 3
     },
 
     "custom/perf-network": {
+        "tooltip": true,
         "exec": "$HOME/.config/waybar/scripts/status_widgets.py network",
         "return-type": "json",
         "interval": 2
