@@ -18,6 +18,8 @@ return {
         { "<leader>t", group = "terminal" },
         { "<leader>T", group = "test" },
         { "<leader>d", group = "debug" },
+        { "<leader>r", group = "run" },
+        { "<leader>m", group = "mobile" },
         { "<leader>u", group = "ui" },
         { "<leader>x", group = "diagnostics" },
       },

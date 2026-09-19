@@ -53,6 +53,19 @@ autocmd("FileType", {
   end,
 })
 
+-- Tool trees stay one row per item. `extends` gives clipped rows an ellipsis-like
+-- affordance while normal horizontal scrolling still reveals the full value.
+autocmd("FileType", {
+  group = augroup("tool_tree_nowrap", { clear = true }),
+  pattern = { "neotest-summary", "OverseerList" },
+  callback = function()
+    vim.opt_local.wrap = false
+    vim.opt_local.linebreak = false
+    vim.opt_local.list = true
+    vim.opt_local.listchars:append({ extends = "…" })
+  end,
+})
+
 -- Markdown / prose: soft wrap
 autocmd("FileType", {
   group = augroup("markdown_wrap", { clear = true }),

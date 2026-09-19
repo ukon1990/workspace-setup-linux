@@ -27,8 +27,8 @@ opt.expandtab = true
 opt.shiftwidth = 2
 opt.tabstop = 2
 opt.smartindent = true
-opt.wrap = true
-opt.linebreak = true -- wrap at word boundaries, not mid-word
+opt.wrap = false
+opt.linebreak = false
 opt.cursorline = true
 opt.list = true
 opt.listchars = { tab = "» ", trail = "·", nbsp = "␣" }

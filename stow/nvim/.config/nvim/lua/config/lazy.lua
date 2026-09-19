@@ -38,6 +38,11 @@ require("lazy").setup({
   change_detection = {
     notify = false,
   },
+  rocks = {
+    -- No configured plugin requires LuaRocks; avoid health warnings and the
+    -- unused hererocks bootstrap path.
+    enabled = false,
+  },
   performance = {
     rtp = {
       disabled_plugins = {

@@ -41,3 +41,6 @@ map("n", "]d", function()
 end, { desc = "Next diagnostic" })
 map("n", "<leader>cd", vim.diagnostic.open_float, { desc = "Line diagnostics" })
 map("n", "<leader>cq", vim.diagnostic.setqflist, { desc = "Diagnostics to quickfix" })
+
+map("n", "[q", "<cmd>cprevious<cr>", { desc = "Previous quickfix item" })
+map("n", "]q", "<cmd>cnext<cr>", { desc = "Next quickfix item" })

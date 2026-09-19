@@ -1,7 +1,7 @@
 return {
   {
     "mason-org/mason.nvim",
-    lazy = false,
+    cmd = { "Mason", "MasonInstall", "MasonUninstall", "MasonUpdate", "MasonLog" },
     build = ":MasonUpdate",
     opts = {
       ui = {
@@ -35,6 +35,7 @@ return {
         "marksman",
         "kotlin_lsp",
         "jdtls",
+        "csharp_ls",
       },
       -- jdtls is started via nvim-jdtls / ftplugin/java.lua
       automatic_enable = {
@@ -47,7 +48,6 @@ return {
     event = { "BufReadPre", "BufNewFile" },
     dependencies = {
       "mason-org/mason.nvim",
-      "mason-org/mason-lspconfig.nvim",
     },
     config = function()
       vim.diagnostic.config({
@@ -83,6 +83,18 @@ return {
 
       vim.lsp.config("ts_ls", {
         root_markers = { "tsconfig.json", "jsconfig.json", "package.json", ".git" },
+        root_dir = function(bufnr, on_dir)
+          local fname = vim.api.nvim_buf_get_name(bufnr)
+          -- angularls owns TypeScript in Angular/Nx workspaces. Running both
+          -- servers duplicates diagnostics, completion and indexing work.
+          if vim.fs.root(fname, { "angular.json", "nx.json" }) then
+            return
+          end
+          local root = vim.fs.root(fname, { "tsconfig.json", "jsconfig.json", "package.json", ".git" })
+          if root then
+            on_dir(root)
+          end
+        end,
       })
 
       -- Only activate inside Angular/Nx workspaces (never fall back to .git alone)
@@ -143,6 +155,44 @@ return {
         },
       })
 
+      -- Swift: system sourcekit-lsp (Xcode / CLT); skip when missing
+      if vim.fn.executable("sourcekit-lsp") == 1 then
+        vim.lsp.config("sourcekit", {
+          cmd = { "sourcekit-lsp" },
+          filetypes = { "swift" },
+          root_markers = { "Package.swift", ".git" },
+          root_dir = function(bufnr, on_dir)
+            local fname = vim.api.nvim_buf_get_name(bufnr)
+            local root = vim.fs.root(fname, { "Package.swift", ".git" })
+            if not root then
+              local xcode = vim.fs.find(function(name)
+                return name:match("%.xcodeproj$") or name:match("%.xcworkspace$")
+              end, { upward = true, path = vim.fs.dirname(fname), limit = 1 })[1]
+              if xcode then
+                root = vim.fs.dirname(xcode)
+              end
+            end
+            if root then
+              on_dir(root)
+            end
+          end,
+        })
+        vim.lsp.enable("sourcekit")
+      end
+
+      vim.lsp.config("csharp_ls", {
+        root_markers = { "*.sln", "*.csproj", ".git" },
+        root_dir = function(bufnr, on_dir)
+          local fname = vim.api.nvim_buf_get_name(bufnr)
+          local root = vim.fs.root(fname, function(name)
+            return name:match("%.sln$") or name:match("%.csproj$") or name == ".git"
+          end)
+          if root then
+            on_dir(root)
+          end
+        end,
+      })
+
       vim.lsp.config("jsonls", {
         settings = {
           json = {
@@ -197,8 +247,14 @@ return {
   },
   {
     "WhoIsSethDaniel/mason-tool-installer.nvim",
+    event = "VeryLazy",
     dependencies = { "mason-org/mason.nvim" },
     opts = {
+      integrations = {
+        ["mason-lspconfig"] = false,
+        ["mason-null-ls"] = false,
+        ["mason-nvim-dap"] = false,
+      },
       ensure_installed = {
         "prettier",
         "eslint_d",

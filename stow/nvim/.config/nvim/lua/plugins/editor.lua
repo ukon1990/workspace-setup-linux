@@ -8,6 +8,8 @@ local treesitter_langs = {
   "javascript",
   "json",
   "kotlin", -- neotest-gradle position discovery
+  "swift", -- sourcekit / Xcode when available
+  "c_sharp", -- dotnet / csharp
   "lua",
   "markdown",
   "markdown_inline",

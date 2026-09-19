@@ -303,6 +303,32 @@ return {
         desc = "Diagnostics",
       },
       {
+        "<leader>xx",
+        function()
+          Snacks.picker.diagnostics()
+        end,
+        desc = "Workspace diagnostics",
+      },
+      {
+        "<leader>xX",
+        function()
+          Snacks.picker.diagnostics_buffer()
+        end,
+        desc = "Buffer diagnostics",
+      },
+      {
+        "<leader>xq",
+        function()
+          local qf = vim.fn.getqflist({ size = 0, title = 0 })
+          if qf.size == 0 then
+            vim.notify("No parsed task errors", vim.log.levels.INFO, { title = "tasks" })
+            return
+          end
+          Snacks.picker.qflist({ title = qf.title ~= "" and qf.title or "Task errors" })
+        end,
+        desc = "Task errors",
+      },
+      {
         "<leader>fs",
         function()
           Snacks.picker.lsp_symbols()

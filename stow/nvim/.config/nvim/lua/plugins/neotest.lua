@@ -84,11 +84,19 @@ local function gate_js_adapter(adapter)
   return adapter
 end
 
---- Side summary (tree + pass/fail) + bottom output panel (logs).
+--- Side summary (tree + pass/fail) + shared bottom tool panel (logs).
 local function open_test_ui()
   local neotest = require("neotest")
-  neotest.summary.open()
+  local tool_panel = require("config.tool_panel")
+  tool_panel.show_tests({ focus = false })
+  -- Opens into config.tool_panel (same window as overseer task output)
   neotest.output_panel.open()
+  vim.schedule(function()
+    local buf = neotest.output_panel.buffer()
+    if buf then
+      tool_panel.show_buf(buf, { focus = false })
+    end
+  end)
 end
 
 local function run_with_ui(run_fn)
@@ -317,7 +325,7 @@ return {
       {
         "<leader>Ts",
         function()
-          require("neotest").summary.toggle()
+          require("config.tool_panel").toggle_tests()
         end,
         desc = "Toggle summary",
       },
@@ -472,14 +480,19 @@ return {
         },
         output_panel = {
           enabled = true,
-          open = "botright split | resize 12",
+          -- Reuse shared bottom tool panel (with overseer), not a new botright split
+          open = function()
+            return require("config.tool_panel").ensure_win({ focus = false })
+          end,
         },
         summary = {
           enabled = true,
           animated = true,
           expand_errors = true,
           follow = true,
-          open = "botright vsplit | vertical resize 45",
+          open = function()
+            return require("config.tool_panel").ensure_sidebar("tests", { focus = false })
+          end,
           mappings = {
             attach = "a",
             expand = { "<CR>", "<2-LeftMouse>" },
