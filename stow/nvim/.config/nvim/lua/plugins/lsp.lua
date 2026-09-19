@@ -33,7 +33,7 @@ return {
         "tailwindcss",
         "emmet_language_server",
         "marksman",
-        "kotlin_language_server",
+        "kotlin_lsp",
         "jdtls",
       },
       -- jdtls is started via nvim-jdtls / ftplugin/java.lua
@@ -105,8 +105,8 @@ return {
         },
       })
 
-      -- Kotlin: prefer Gradle/Maven root; fall back to file dir for loose .kt files
-      vim.lsp.config("kotlin_language_server", {
+      -- Kotlin: JetBrains kotlin-lsp; prefer Gradle/Maven root; fall back to file dir
+      vim.lsp.config("kotlin_lsp", {
         root_dir = function(bufnr, on_dir)
           local fname = vim.api.nvim_buf_get_name(bufnr)
           local root = vim.fs.root(fname, {
@@ -120,7 +120,8 @@ return {
           on_dir(root or vim.fs.dirname(fname))
         end,
         init_options = {
-          storagePath = vim.fn.stdpath("cache") .. "/kotlin-language-server",
+          -- JDK for symbol resolution (tracks SDKMAN `current`)
+          defaultSdk = vim.fn.resolve(vim.fn.expand("~/.sdkman/candidates/java/current")),
         },
       })
 
