@@ -43,6 +43,48 @@ return {
     },
   },
   {
+    "e-sigs/winbuf.nvim",
+    event = "VeryLazy",
+    dependencies = { "nvim-tree/nvim-web-devicons" },
+    opts = {
+      style = "thin",
+      hide_single = false,
+      max_name_length = 48,
+      truncate_names = true,
+      diagnostics = "nvim_lsp",
+      buf_delete = function(buf)
+        Snacks.bufdelete(buf)
+      end,
+    },
+    config = function(_, opts)
+      require("winbuf").setup(opts)
+      require("config.winbuf_fix").setup()
+    end,
+    keys = {
+      {
+        "<S-h>",
+        function()
+          require("winbuf").cycle(-1)
+        end,
+        desc = "Prev window buffer",
+      },
+      {
+        "<S-l>",
+        function()
+          require("winbuf").cycle(1)
+        end,
+        desc = "Next window buffer",
+      },
+      {
+        "<leader>bd",
+        function()
+          require("winbuf").close_buf()
+        end,
+        desc = "Close window buffer",
+      },
+    },
+  },
+  {
     "folke/todo-comments.nvim",
     event = { "BufReadPost", "BufNewFile" },
     dependencies = { "nvim-lua/plenary.nvim" },

@@ -25,10 +25,7 @@ map("n", "<A-k>", "<cmd>m .-2<cr>==", { desc = "Move line up" })
 map("v", "<A-j>", ":m '>+1<cr>gv=gv", { desc = "Move selection down" })
 map("v", "<A-k>", ":m '<-2<cr>gv=gv", { desc = "Move selection up" })
 
--- Buffers
-map("n", "<S-h>", "<cmd>bprevious<cr>", { desc = "Previous buffer" })
-map("n", "<S-l>", "<cmd>bnext<cr>", { desc = "Next buffer" })
-map("n", "<leader>bd", "<cmd>bdelete<cr>", { desc = "Delete buffer" })
+-- Buffer cycle/close: winbuf.nvim (per-window tabs) owns <S-h>/<S-l>/<leader>bd
 
 -- Save / quit
 map("n", "<leader>w", "<cmd>write<cr>", { desc = "Save file" })

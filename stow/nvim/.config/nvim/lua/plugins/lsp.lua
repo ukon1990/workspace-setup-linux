@@ -107,6 +107,24 @@ return {
 
       -- Kotlin: JetBrains kotlin-lsp; prefer Gradle/Maven root; fall back to file dir
       vim.lsp.config("kotlin_lsp", {
+        -- Per-project system path avoids cross-talk; still only one server per project
+        -- may hold the shared RocksDB index lock.
+        cmd = function(dispatchers, config)
+          local root = config.root_dir or vim.uv.cwd() or "."
+          local hash = vim.fn.sha256(root):sub(1, 8)
+          local name = vim.fn.fnamemodify(root, ":t")
+          local system = vim.fn.stdpath("cache") .. "/kotlin-lsp-workspaces/" .. name .. "-" .. hash
+          vim.fn.mkdir(system, "p")
+          return vim.lsp.rpc.start({
+            "intellij-server",
+            "--stdio",
+            "--system-path=" .. system,
+          }, dispatchers, {
+            cwd = config.cmd_cwd,
+            env = config.cmd_env,
+            detached = config.detached,
+          })
+        end,
         root_dir = function(bufnr, on_dir)
           local fname = vim.api.nvim_buf_get_name(bufnr)
           local root = vim.fs.root(fname, {
