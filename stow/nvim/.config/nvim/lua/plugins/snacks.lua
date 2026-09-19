@@ -238,7 +238,55 @@ return {
         function()
           Snacks.terminal()
         end,
-        desc = "Toggle terminal",
+        desc = "Toggle terminal (count = id)",
+      },
+      {
+        "<leader>tv",
+        function()
+          Snacks.terminal(nil, {
+            win = { position = "right", stack = false },
+          })
+        end,
+        desc = "Terminal right (side-by-side; count = id)",
+      },
+      {
+        "<leader>th",
+        function()
+          Snacks.terminal(nil, {
+            win = { position = "left", stack = false },
+          })
+        end,
+        desc = "Terminal left (side-by-side; count = id)",
+      },
+      {
+        "<leader>ts",
+        function()
+          Snacks.terminal(nil, {
+            win = { position = "bottom", stack = true },
+          })
+        end,
+        desc = "Terminal bottom stacked (count = id)",
+      },
+      {
+        "<leader>uC",
+        function()
+          Snacks.picker.colorschemes()
+        end,
+        desc = "Colorscheme",
+      },
+      {
+        "<leader>ub",
+        function()
+          local dark = vim.o.background ~= "dark"
+          vim.o.background = dark and "dark" or "light"
+          local name = vim.g.colors_name or "tokyonight"
+          if name:match("^tokyonight") then
+            vim.cmd.colorscheme(dark and "tokyonight-night" or "tokyonight-day")
+          else
+            pcall(vim.cmd.colorscheme, name)
+          end
+        end,
+        desc = "Toggle background",
       },
       {
         "<leader>uN",

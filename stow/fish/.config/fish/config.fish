@@ -1,3 +1,7 @@
+# The following lines were added by Docker Desktop to add commands to your PATH.
+export PATH="$PATH:/Users/jonas/.docker/bin"
+# End of Docker Desktop section.
+
 source /usr/share/cachyos-fish-config/cachyos-config.fish
 
 set -l podman_socket /run/user/(id -u)/podman/podman.sock
