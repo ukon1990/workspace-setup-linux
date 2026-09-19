@@ -19,8 +19,6 @@ return {
       -- Always open an interactive terminal for task output (shared bottom panel).
       component_aliases = {
         default = {
-          { "display_duration", detail_level = 2 },
-          "on_output_summarize",
           "on_exit_set_status",
           "user.task_result",
           { "on_complete_dispose", require_view = { "SUCCESS", "FAILURE" } },
@@ -28,8 +26,6 @@ return {
         },
         -- Per-runner Neotest tasks: named tabs in the dock, no notify spam.
         default_neotest = {
-          { "display_duration", detail_level = 2 },
-          "on_output_summarize",
           "on_exit_set_status",
           "user.neotest_tab",
           { "on_complete_dispose", require_view = { "SUCCESS", "FAILURE" } },
@@ -40,6 +36,9 @@ return {
         min_width = 36,
         max_width = 0.3,
         default_detail = 1,
+        render = function(task)
+          return require("overseer.render").format_standard(task)
+        end,
       },
       form = {
         win_opts = {

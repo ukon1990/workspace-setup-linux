@@ -256,6 +256,18 @@ local overseer_consumer = require("neotest.consumers.overseer")
 ok(type(overseer_consumer) == "table" and overseer_consumer.run ~= nil, "Overseer neotest consumer missing")
 local alias = require("overseer.component").get_alias("default_neotest")
 ok(type(alias) == "table" and #alias > 0, "default_neotest component alias was not registered")
+local function alias_contains(alias_name)
+  for _, component in ipairs(require("overseer.component").get_alias(alias_name) or {}) do
+    local name = type(component) == "string" and component or component[1]
+    if name == "display_duration" or name == "on_output_summarize" then
+      return true
+    end
+  end
+  return false
+end
+ok(not alias_contains("default"), "default alias still uses deprecated render components")
+ok(not alias_contains("default_neotest"), "default_neotest alias still uses deprecated render components")
+ok(type(require("overseer.config").task_list.render) == "function", "Overseer task renderer missing")
 
 local label_buf = vim.api.nvim_create_buf(false, true)
 vim.b[label_buf].tool_panel_label = "tests: backend"
