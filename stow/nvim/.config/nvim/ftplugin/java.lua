@@ -49,6 +49,21 @@ for _, rt in ipairs(runtime_map) do
   end
 end
 
+-- Java debug / test extensions (Mason packages)
+local mason_pkg = vim.fn.stdpath("data") .. "/mason/packages"
+local bundles = {}
+local java_debug = vim.fn.glob(mason_pkg .. "/java-debug-adapter/extension/server/com.microsoft.java.debug.plugin-*.jar", true, true)
+local java_test = vim.fn.glob(mason_pkg .. "/java-test/extension/server/*.jar", true, true)
+vim.list_extend(bundles, java_debug)
+vim.list_extend(bundles, java_test)
+if #bundles == 0 then
+  vim.notify_once(
+    "java-debug-adapter / java-test not found. Install via :Mason (needed for DAP + neotest-java).",
+    vim.log.levels.WARN,
+    { title = "jdtls" }
+  )
+end
+
 local config = {
   name = "jdtls",
   cmd = cmd,
@@ -68,12 +83,18 @@ local config = {
     },
   },
   init_options = {
-    bundles = {},
+    bundles = bundles,
   },
   on_attach = function(_, bufnr)
     local function map(mode, lhs, rhs, desc)
       vim.keymap.set(mode, lhs, rhs, { buffer = bufnr, desc = desc })
     end
+
+    -- Register Java DAP (requires java-debug-adapter bundle above)
+    pcall(function()
+      require("jdtls.dap").setup_dap({ hotcodereplace = "auto" })
+      require("jdtls.dap").setup_dap_main_class_configs()
+    end)
 
     map("n", "<leader>jo", jdtls.organize_imports, "Organize imports")
     map("n", "<leader>jv", jdtls.extract_variable, "Extract variable")

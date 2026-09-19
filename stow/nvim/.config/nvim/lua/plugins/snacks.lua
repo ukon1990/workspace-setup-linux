@@ -156,6 +156,14 @@ return {
       {
         "<leader>gg",
         function()
+          if vim.fn.executable("lazygit") ~= 1 then
+            vim.notify(
+              "lazygit is not installed. Install it (e.g. `paru -S lazygit`) then retry.",
+              vim.log.levels.WARN,
+              { title = "Snacks" }
+            )
+            return
+          end
           Snacks.lazygit()
         end,
         desc = "Lazygit",

@@ -16,6 +16,8 @@ return {
         { "<leader>b", group = "buffer" },
         { "<leader>j", group = "java" },
         { "<leader>t", group = "terminal" },
+        { "<leader>T", group = "test" },
+        { "<leader>d", group = "debug" },
         { "<leader>u", group = "ui" },
         { "<leader>x", group = "diagnostics" },
       },

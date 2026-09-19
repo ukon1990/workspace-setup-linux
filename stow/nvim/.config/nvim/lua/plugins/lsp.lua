@@ -205,6 +205,9 @@ return {
         "ktlint",
         "google-java-format",
         "stylua",
+        -- Java DAP / test (jdtls bundles in ftplugin/java.lua)
+        "java-debug-adapter",
+        "java-test",
       },
       automatic_installation = true,
     },
