@@ -6,6 +6,8 @@ local opt = vim.opt
 opt.number = true
 opt.relativenumber = true
 opt.mouse = "a"
+-- Custom RightMouse handlers (explorer, neotest); avoid Neovim's built-in popup.
+opt.mousemodel = "extend"
 opt.clipboard = "unnamedplus"
 opt.undofile = true
 opt.swapfile = false

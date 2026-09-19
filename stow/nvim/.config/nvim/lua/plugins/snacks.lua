@@ -58,36 +58,94 @@ return {
                   error(err)
                 end
               end,
+              -- Create under picker:dir() (directory item or parent of file), same as explorer_add.
+              explorer_new_file = function(picker)
+                local Tree = require("snacks.explorer.tree")
+                local Actions = require("snacks.explorer.actions")
+                Snacks.input({ prompt = "New file name" }, function(value)
+                  if not value or value:match("^%s*$") then
+                    return
+                  end
+                  value = value:gsub("/+$", "")
+                  local path = vim.fs.normalize(picker:dir() .. "/" .. value)
+                  if vim.uv.fs_stat(path) then
+                    Snacks.notify.warn("File already exists:\n- `" .. path .. "`")
+                    return
+                  end
+                  local dir = vim.fs.dirname(path)
+                  vim.fn.mkdir(dir, "p")
+                  io.open(path, "w"):close()
+                  Tree:open(dir)
+                  Tree:refresh(dir)
+                  Actions.update(picker, { target = path })
+                end)
+              end,
+              explorer_new_folder = function(picker)
+                local Tree = require("snacks.explorer.tree")
+                local Actions = require("snacks.explorer.actions")
+                Snacks.input({ prompt = "New folder name" }, function(value)
+                  if not value or value:match("^%s*$") then
+                    return
+                  end
+                  value = value:gsub("/+$", "")
+                  local path = vim.fs.normalize(picker:dir() .. "/" .. value)
+                  if vim.uv.fs_stat(path) then
+                    Snacks.notify.warn("Folder already exists:\n- `" .. path .. "`")
+                    return
+                  end
+                  vim.fn.mkdir(path, "p")
+                  Tree:open(path)
+                  Tree:refresh(path)
+                  Actions.update(picker, { target = path })
+                end)
+              end,
               explorer_open_menu = function(picker)
+                -- Resolve the row under the cursor (not the previously focused item).
+                local item
                 local mp = vim.fn.getmousepos()
                 if mp.winid == picker.list.win.win then
                   local idx = picker.list:row2idx(mp.line)
                   if idx and idx > 0 then
                     picker.list:view(idx)
+                    item = picker.list:get(idx)
                   end
                 end
-
-                local item = picker:current()
-                if not item or item.dir then
+                item = item or picker:current()
+                if not item then
                   return
                 end
 
-                local choices = {
-                  { label = "Open in editor tab", action = "explorer_open_tab" },
-                  { label = "Open split left", action = "explorer_open_vsplit_left" },
-                  { label = "Open split right", action = "explorer_open_vsplit_right" },
-                  { label = "Open split up", action = "explorer_open_hsplit_up" },
-                  { label = "Open split down", action = "explorer_open_hsplit_down" },
-                }
-                vim.ui.select(choices, {
-                  prompt = "Open file",
-                  format_item = function(choice)
-                    return choice.label
-                  end,
-                }, function(choice)
-                  if choice then
-                    picker:action(choice.action)
-                  end
+                local choices
+                if item.dir then
+                  choices = {
+                    { label = "New file", action = "explorer_new_file" },
+                    { label = "New folder", action = "explorer_new_folder" },
+                    { label = "Delete", action = "explorer_del" },
+                  }
+                else
+                  choices = {
+                    { label = "Open in editor tab", action = "explorer_open_tab" },
+                    { label = "Open split left", action = "explorer_open_vsplit_left" },
+                    { label = "Open split right", action = "explorer_open_vsplit_right" },
+                    { label = "Open split up", action = "explorer_open_hsplit_up" },
+                    { label = "Open split down", action = "explorer_open_hsplit_down" },
+                    { label = "Delete", action = "explorer_del" },
+                  }
+                end
+
+                -- Defer so list cursor settles before snacks ui.select opens.
+                vim.schedule(function()
+                  vim.ui.select(choices, {
+                    prompt = "Context menu",
+                    kind = "explorer_context",
+                    format_item = function(choice)
+                      return choice.label
+                    end,
+                  }, function(choice)
+                    if choice then
+                      picker:action(choice.action)
+                    end
+                  end)
                 end)
               end,
             },
