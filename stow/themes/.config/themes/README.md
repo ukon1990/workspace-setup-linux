@@ -115,7 +115,7 @@ clobber the theme you've already picked in `gtkrc` / `gtk-4.0`.
 
 Applies a named theme:
 
-1. Renders `hypr/theme.conf`, `waybar/colors.css`, and `mako/config`
+1. Renders `hypr/theme.lua`, `waybar/colors.css`, and `mako/config`
    from the palette.
 2. Writes the new theme name to `state/current`.
 3. Reloads Hyprland (`hyprctl reload`), Waybar (`pkill -SIGUSR2
