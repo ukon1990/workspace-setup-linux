@@ -8,6 +8,7 @@ zip
 neovim
 tree-sitter
 tree-sitter-cli
+lazygit
 yay
 rbenv
 ruby-build
