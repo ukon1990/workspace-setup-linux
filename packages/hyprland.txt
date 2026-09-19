@@ -11,9 +11,12 @@ hyprsunset
 hyprpolkitagent
 kitty
 dolphin
-sherlock
-sherlock-launcher-bin
 wl-clipboard
+grim
+slurp
+swappy
+wofi
+otf-font-awesome
 playerctl
 pavucontrol
 xdg-desktop-portal-hyprland

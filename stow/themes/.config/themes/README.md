@@ -29,6 +29,11 @@ Generated files (rewritten every time a theme is applied):
 - `~/.config/hypr/theme.lua` — loaded from `hyprland.lua` via `require("theme")`
 - `~/.config/waybar/colors.css` — imported from `waybar/style.css`
 - `~/.config/mako/config` — full mako config (regenerated in place)
+- `~/.config/swappy/config` — full swappy config (regenerated in place); its
+  `custom_color` tracks the palette's `primary` accent so the screenshot
+  annotation tool (bound to Print Screen, see `stow/hypr/.config/hypr/scripts/screenshot.sh`)
+  matches your theme. Swappy's own panel chrome (GTK3) still follows the
+  system dark/light preference set below, not the full palette.
 
 Do **not** hand-edit the generated files — they will be overwritten on the
 next theme switch. Change palette JSON or the generator in `bin/theme`

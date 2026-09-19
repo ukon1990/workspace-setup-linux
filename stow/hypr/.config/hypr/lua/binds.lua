@@ -8,6 +8,7 @@ local menu = "sherlock"
 
 local lock_session = hypr .. "/scripts/lock-session.sh"
 local switch_user = hypr .. "/scripts/switch-user.sh"
+local screenshot_menu = hypr .. "/scripts/screenshot-menu.sh"
 
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal))
 hl.bind(mainMod .. " + Q", hl.dsp.window.kill())
@@ -22,6 +23,8 @@ hl.bind(mainMod .. " + L", hl.dsp.exec_cmd(lock_session))
 hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd(switch_user))
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))
+
+hl.bind("Print", hl.dsp.exec_cmd(screenshot_menu))
 
 hl.bind(mainMod .. " + G", hl.dsp.group.toggle())
 hl.bind(mainMod .. " + TAB", hl.dsp.group.next())

@@ -1,3 +1,5 @@
 # AUR / helper-managed packages
 # Installed via yay if it is available.
 google-chrome
+sherlock
+sherlock-launcher-bin
