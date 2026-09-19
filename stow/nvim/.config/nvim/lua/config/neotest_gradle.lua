@@ -59,20 +59,44 @@ local function results_dir_for(project_directory, task_name)
 end
 
 --- Collect XML report directories under build/test-results (non-recursive per dir).
-local function list_result_dirs(project_directory, preferred_task)
-  local dirs = {}
-  local preferred = results_dir_for(project_directory, preferred_task)
-  if vim.fn.isdirectory(preferred) == 1 then
-    table.insert(dirs, preferred)
+local function add_unique(values, seen, value)
+  if value and not seen[value] then
+    seen[value] = true
+    table.insert(values, value)
   end
+end
 
-  local root = project_directory .. "/build/test-results"
-  if vim.fn.isdirectory(root) == 1 then
-    for name, typ in vim.fs.dir(root) do
-      if typ == "directory" and name ~= "binary" then
-        local path = root .. "/" .. name
-        if path ~= preferred then
-          table.insert(dirs, path)
+local function project_directories(tree, fallback)
+  local directories = {}
+  local seen = {}
+  add_unique(directories, seen, fallback)
+  for _, position in tree:iter() do
+    if position.path then
+      add_unique(directories, seen, find_project_directory(position.path))
+    end
+  end
+  return directories
+end
+
+local function list_result_dirs(projects, preferred_task, suite)
+  local dirs = {}
+  local seen = {}
+
+  for _, project_directory in ipairs(projects) do
+    local preferred = results_dir_for(project_directory, preferred_task)
+    if vim.fn.isdirectory(preferred) == 1 then
+      add_unique(dirs, seen, preferred)
+    end
+
+    -- Gradle resolves a root suite such as `allTests` across subprojects, while
+    -- each concrete target writes XML to its own result directory.
+    if suite then
+      local root = project_directory .. "/build/test-results"
+      if vim.fn.isdirectory(root) == 1 then
+        for name, typ in vim.fs.dir(root) do
+          if typ == "directory" and name ~= "binary" then
+            add_unique(dirs, seen, root .. "/" .. name)
+          end
         end
       end
     end
@@ -112,28 +136,52 @@ local function as_list(value)
   return (type(value) == "table" and #value > 0) and value or { value }
 end
 
-local function find_position_for_test_case(tree, test_case_node)
+local function candidate_ids(test_case_node)
   local attr = test_case_node._attr or {}
   if not attr.name or not attr.classname then
-    return nil
+    return {}
   end
-  local test_name = attr.name:gsub("%(.*%)$", "")
-  local class_name = attr.classname
-  local candidate_ids = {
-    class_name .. "." .. test_name,
-    class_name:gsub("%$", ".") .. "." .. test_name,
-  }
+  local test_name = attr.name:gsub("%b()$", ""):gsub("%b[]$", "")
+  local class_names = { attr.classname }
+  -- Kotlin/Native prefixes class names with the Gradle target, e.g.
+  -- iosSimulatorArm64Test.net.example.ExampleTest.
+  local target_prefix = attr.classname:match("^([^.]+)%.")
+  if target_prefix and vim.endswith(target_prefix, "Test") then
+    table.insert(class_names, attr.classname:sub(#target_prefix + 2))
+  end
+  local candidates = {}
+  local seen = {}
+  for _, class_name in ipairs(class_names) do
+    add_unique(candidates, seen, class_name .. "." .. test_name)
+    add_unique(candidates, seen, class_name:gsub("%$", ".") .. "." .. test_name)
+  end
+  return candidates
+end
 
+local function index_positions(tree)
+  local positions = {}
   for _, position in tree:iter() do
-    if position then
-      for _, candidate_id in ipairs(candidate_ids) do
-        if position.id == candidate_id then
-          return position
-        end
-      end
+    if position and position.id then
+      positions[position.id] = position
+    end
+  end
+  return positions
+end
+
+local function find_position_for_test_case(positions, test_case_node)
+  for _, candidate_id in ipairs(candidate_ids(test_case_node)) do
+    if positions[candidate_id] then
+      return positions[candidate_id]
     end
   end
   return nil
+end
+
+local function merge_result(results, position_id, result)
+  local current = results[position_id]
+  if not current or (current.status ~= "failed" and result.status == "failed") then
+    results[position_id] = result
+  end
 end
 
 local function parse_error_from_failure_xml(failure_node, position)
@@ -202,13 +250,14 @@ function M.build_spec(arguments)
     context = {
       project_directory = project_directory,
       test_task = task,
+      suite = position.type == "dir",
       -- Keep upstream typo key for compatibility if anything else reads it
       test_resuls_directory = results_dir_for(project_directory, task),
     },
   }
 end
 
-function M.results(build_specification, _, tree)
+function M.results(build_specification, process_result, tree)
   local context = build_specification.context or {}
   local project_directory = context.project_directory
   local task = context.test_task or "test"
@@ -219,34 +268,56 @@ function M.results(build_specification, _, tree)
     if not dir or dir == "" or dir:match("^null") or vim.fn.isdirectory(dir) ~= 1 then
       return {}
     end
-    local ok, res = pcall(upstream_results, build_specification, _, tree)
+    local ok, res = pcall(upstream_results, build_specification, process_result, tree)
     return ok and res or {}
   end
 
   local results = {}
-  for _, directory in ipairs(list_result_dirs(project_directory, task)) do
+  local positions = index_positions(tree)
+  local projects = project_directories(tree, project_directory)
+  for _, directory in ipairs(list_result_dirs(projects, task, context.suite)) do
     for _, report in ipairs(parse_xml_dir(directory)) do
       for _, suite in pairs(as_list(report.testsuite)) do
         for _, test_case in pairs(as_list(suite.testcase)) do
-          local matched = find_position_for_test_case(tree, test_case)
+          local matched = find_position_for_test_case(positions, test_case)
           if matched then
             local failure = test_case.failure
             local status = failure == nil and "passed" or "failed"
             local short_message = failure and (failure._attr or {}).message or nil
             local error = failure and parse_error_from_failure_xml(failure, matched) or nil
-            results[matched.id] = {
+            merge_result(results, matched.id, {
               status = status,
               short = short_message,
               errors = error and { error } or {},
-            }
+            })
           end
         end
       end
     end
   end
 
+  if next(results) or not process_result or process_result.code == 0 then
+    -- Test source sets that are not runnable on this host (notably Android
+    -- device tests) are skipped rather than reported as false failures.
+    for _, position in tree:iter() do
+      if position.type == "test" and not results[position.id] then
+        results[position.id] = { status = "skipped", errors = {} }
+      end
+    end
+  else
+    -- Preserve a genuine Gradle/configuration failure when no XML was emitted.
+    results[tree:data().id] = {
+      status = "failed",
+      short = "Gradle exited before producing test results",
+      errors = {},
+    }
+  end
+
   return results
 end
+
+M._candidate_ids = candidate_ids
+M._merge_result = merge_result
 
 --- Apply hardened build_spec + results onto a neotest-gradle adapter instance.
 function M.patch(adapter)

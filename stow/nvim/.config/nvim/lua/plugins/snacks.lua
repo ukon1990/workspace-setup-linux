@@ -236,9 +236,9 @@ return {
       {
         "<leader>tt",
         function()
-          Snacks.terminal()
+          require("config.tool_panel").toggle_terminal({ count = vim.v.count1 })
         end,
-        desc = "Toggle terminal (count = id)",
+        desc = "Toggle terminal in dock (count = id)",
       },
       {
         "<leader>tv",

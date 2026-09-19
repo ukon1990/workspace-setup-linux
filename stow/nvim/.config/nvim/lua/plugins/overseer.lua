@@ -26,6 +26,14 @@ return {
           { "on_complete_dispose", require_view = { "SUCCESS", "FAILURE" } },
           "user.tool_panel",
         },
+        -- Per-runner Neotest tasks: named tabs in the dock, no notify spam.
+        default_neotest = {
+          { "display_duration", detail_level = 2 },
+          "on_output_summarize",
+          "on_exit_set_status",
+          "user.neotest_tab",
+          { "on_complete_dispose", require_view = { "SUCCESS", "FAILURE" } },
+        },
       },
       task_list = {
         direction = "right",

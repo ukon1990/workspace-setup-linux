@@ -12,6 +12,7 @@ local MAX_HISTORY = 12
 ---@field history integer[]
 ---@field sidebar_win? integer
 ---@field sidebar_kind? "tasks"|"tests"
+---@field tests_status? string
 
 ---@type table<integer, ToolPanelState>
 local states = {}
@@ -21,6 +22,14 @@ local setup_done = false
 ---@return boolean
 local function win_ok(id)
   return type(id) == "number" and vim.api.nvim_win_is_valid(id)
+end
+
+local function is_editor_win(win)
+  if not win_ok(win) or vim.w[win].tool_panel then
+    return false
+  end
+  local buf = vim.api.nvim_win_get_buf(win)
+  return vim.bo[buf].buftype == ""
 end
 
 ---@param tab? integer
@@ -33,6 +42,46 @@ local function state_for(tab)
     states[tab] = state
   end
   return state
+end
+
+--- Resolve the most recently used normal editor window, excluding tool panes.
+---@return integer?
+function M.editor_win()
+  local alternate = vim.fn.win_getid(vim.fn.winnr("#"))
+  if is_editor_win(alternate) then
+    return alternate
+  end
+  local current = vim.api.nvim_get_current_win()
+  if is_editor_win(current) then
+    return current
+  end
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if is_editor_win(win) then
+      return win
+    end
+  end
+end
+
+--- Open a source location without reusing the activity rail or output dock.
+---@param bufnr integer
+---@param line? integer zero-indexed
+---@param column? integer zero-indexed
+---@return boolean
+function M.open_in_editor(bufnr, line, column)
+  local win = M.editor_win()
+  if not win or not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
+  end
+  vim.api.nvim_win_set_buf(win, bufnr)
+  if line then
+    local last_line = math.max(1, vim.api.nvim_buf_line_count(bufnr))
+    local target_line = math.min(math.max(1, line + 1), last_line)
+    local text = vim.api.nvim_buf_get_lines(bufnr, target_line - 1, target_line, false)[1] or ""
+    local target_column = math.min(math.max(0, column or 0), #text)
+    vim.api.nvim_win_set_cursor(win, { target_line, target_column })
+  end
+  vim.api.nvim_set_current_win(win)
+  return true
 end
 
 ---@param win integer
@@ -74,6 +123,10 @@ end
 local function buf_label(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return "?"
+  end
+  local custom = vim.b[bufnr].tool_panel_label
+  if type(custom) == "string" and custom ~= "" then
+    return vim.fn.strdisplaywidth(custom) > 32 and (vim.fn.strcharpart(custom, 0, 29) .. "…") or custom
   end
   if vim.bo[bufnr].filetype == "neotest-output-panel" then
     return "tests"
@@ -432,6 +485,9 @@ function M.ensure_sidebar(kind, opts)
   if opts.focus == false and win_ok(previous) then
     vim.api.nvim_set_current_win(previous)
   end
+  if kind == "tests" then
+    M.refresh_tests_status()
+  end
   return win
 end
 
@@ -440,6 +496,7 @@ function M.show_tests(opts)
   opts = opts or {}
   close_other_sidebar("tests")
   require("neotest").summary.open({ enter = opts.focus == true })
+  M.refresh_tests_status()
 end
 
 function M.toggle_tests()
@@ -448,9 +505,34 @@ function M.toggle_tests()
     require("neotest").summary.close()
     state.sidebar_win = nil
     state.sidebar_kind = nil
+    state.tests_status = nil
     return
   end
   M.show_tests({ focus = true })
+end
+
+--- Show a persistent discovery/loading message on the Tests activity rail.
+---@param message string|nil
+function M.set_tests_status(message)
+  local state = state_for()
+  state.tests_status = message
+  M.refresh_tests_status()
+end
+
+function M.refresh_tests_status()
+  local state = state_for()
+  if not win_ok(state.sidebar_win) or state.sidebar_kind ~= "tests" then
+    return
+  end
+  if state.tests_status and state.tests_status ~= "" then
+    vim.api.nvim_set_option_value(
+      "winbar",
+      "%#ToolPanelTabSel# " .. state.tests_status:gsub("%%", "%%%%") .. " %#ToolPanelTabFill#",
+      { scope = "local", win = state.sidebar_win }
+    )
+  else
+    vim.api.nvim_set_option_value("winbar", "", { scope = "local", win = state.sidebar_win })
+  end
 end
 
 ---@param opts? { focus?: boolean }
@@ -481,6 +563,59 @@ function M.close()
   end
   state.primary_win = nil
   state.output_wins = {}
+end
+
+--- Toggle a Snacks terminal into the shared bottom dock tab group (not a stacked split).
+---@param opts? { count?: integer, focus?: boolean }
+---@return integer|nil bufnr
+function M.toggle_terminal(opts)
+  opts = opts or {}
+  local count = opts.count or vim.v.count1
+  if count < 1 then
+    count = 1
+  end
+  local label = count == 1 and "terminal" or ("terminal " .. tostring(count))
+
+  local Snacks = Snacks or require("snacks")
+  local term = Snacks.terminal.get(nil, {
+    count = count,
+    -- Float so Snacks does not open a second botright stack under the dock.
+    win = { position = "float" },
+  })
+  if not term or not term.buf or not vim.api.nvim_buf_is_valid(term.buf) then
+    return nil
+  end
+  pcall(function()
+    term:hide()
+  end)
+
+  local bufnr = term.buf
+  vim.b[bufnr].tool_panel_label = label
+
+  local state = state_for()
+  local win = state.primary_win
+  if win_ok(win) and vim.api.nvim_win_get_buf(win) == bufnr then
+    prune_history(state)
+    local previous
+    for i = #state.history, 1, -1 do
+      if state.history[i] ~= bufnr then
+        previous = state.history[i]
+        break
+      end
+    end
+    if previous then
+      M.show_buf(previous, { focus = opts.focus ~= false, win = win })
+    else
+      M.close()
+    end
+    return bufnr
+  end
+
+  M.show_buf(bufnr, { focus = opts.focus ~= false })
+  if opts.focus ~= false then
+    pcall(vim.cmd.startinsert)
+  end
+  return bufnr
 end
 
 ---@return ToolPanelState

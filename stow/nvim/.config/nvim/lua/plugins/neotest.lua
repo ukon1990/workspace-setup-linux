@@ -1,44 +1,12 @@
 -- Multi-language test runner (IntelliJ-like summary / gutter / output).
--- Rust adapter needs cargo-nextest on PATH: `cargo install cargo-nextest`
--- Kotlin/JUnit on Gradle: neotest-gradle (neotest-java is Java/.java only).
+-- Java/Kotlin: neotest-maven (mvnw) for Maven, neotest-gradle for Gradle.
+-- Mixed monorepos seed every Maven/Gradle/npm root before running suites.
 
-local GRADLE_MARKERS = {
-  "gradlew",
-  "settings.gradle",
-  "settings.gradle.kts",
-  "build.gradle",
-  "build.gradle.kts",
-}
+local discovery = require("config.neotest_discovery")
 
-local function has_gradle(path)
-  local dir = path and (vim.fn.isdirectory(path) == 1 and path or vim.fs.dirname(path)) or vim.uv.cwd()
-  return vim.fs.find(GRADLE_MARKERS, { upward = true, path = dir, limit = 1 })[1] ~= nil
-end
-
---- Restrict neotest-java to *.java — it otherwise matches *Test.kt by classname
---- and crashes treesitter (Java query on Kotlin grammar).
-local function java_adapter()
-  local adapter = require("neotest-java")({
-    ignore_wrapper = false,
-  })
-  local orig_root = adapter.root
-  local orig_is_test = adapter.is_test_file
-  adapter.root = function(dir)
-    if has_gradle(dir) then
-      return nil
-    end
-    return orig_root(dir)
-  end
-  adapter.is_test_file = function(path)
-    if not path:match("%.java$") then
-      return false
-    end
-    if has_gradle(path) then
-      return false
-    end
-    return orig_is_test(path)
-  end
-  return adapter
+--- Maven adapter for Java + Kotlin Surefire/Failsafe tests.
+local function maven_adapter()
+  return require("config.neotest_maven").create()
 end
 
 --- Gradle adapter for Kotlin + Java (kotlin.test / JUnit via `./gradlew test`).
@@ -55,6 +23,9 @@ local function gradle_adapter()
     "Spec%.java$",
   }
   adapter.is_test_file = function(file_path)
+    if discovery.nearest_jvm_build(file_path) ~= "gradle" then
+      return false
+    end
     for _, pattern in ipairs(patterns) do
       if file_path:match(pattern) then
         return true
@@ -72,11 +43,63 @@ local function gradle_adapter()
   return require("config.neotest_gradle").patch(adapter)
 end
 
---- Prevent jest/vitest from claiming Gradle/KMP repos that also have package.json.
-local function gate_js_adapter(adapter)
+--- Prefer Vitest when present so Jest and Vitest never claim the same package.
+local function js_package_cwd(path)
+  local tools = require("config.project_tools")
+  local dir = path and (vim.fn.isdirectory(path) == 1 and path or vim.fs.dirname(path)) or vim.uv.cwd()
+  local vitest = discovery.nearest_vitest_package(dir)
+  if vitest then
+    return vitest
+  end
+  return tools.nearest_npm_dir(dir) or dir
+end
+
+local function gate_js_adapter(adapter, kind)
+  adapter.root = function(dir)
+    if kind == "vitest" then
+      return discovery.nearest_vitest_package(dir)
+    end
+    local tools = require("config.project_tools")
+    local pkg = tools.nearest_npm_dir(dir)
+    if not pkg then
+      return nil
+    end
+    -- Nested packages under a Vitest root (e.g. ethereal-ui) belong to Vitest.
+    local vitest_root = discovery.nearest_vitest_package(dir)
+    if vitest_root then
+      return nil
+    end
+    if discovery.npm_has_jest(pkg) or discovery.npm_has_react_scripts(pkg) then
+      return pkg
+    end
+    return nil
+  end
+  adapter.is_test_file = function(path)
+    if not discovery.is_js_test_file(path) then
+      return false
+    end
+    local vitest_root = discovery.nearest_vitest_package(path)
+    if kind == "vitest" then
+      return vitest_root ~= nil
+    end
+    if vitest_root then
+      return false
+    end
+    local pkg = require("config.project_tools").nearest_npm_dir(vim.fs.dirname(path))
+    return pkg ~= nil and (discovery.npm_has_jest(pkg) or discovery.npm_has_react_scripts(pkg))
+  end
+  return adapter
+end
+
+--- Only activate Rust when a Cargo project exists; never warn otherwise.
+local function rust_adapter()
+  local adapter = require("neotest-rust")({
+    args = { "--no-capture" },
+    dap_adapter = "codelldb",
+  })
   local orig_root = adapter.root
   adapter.root = function(dir)
-    if has_gradle(dir) then
+    if not discovery.has_cargo(dir) then
       return nil
     end
     return orig_root(dir)
@@ -89,7 +112,7 @@ local function open_test_ui()
   local neotest = require("neotest")
   local tool_panel = require("config.tool_panel")
   tool_panel.show_tests({ focus = false })
-  -- Opens into config.tool_panel (same window as overseer task output)
+  -- Prefer Overseer runner tabs; keep the shared panel as a fallback tab.
   neotest.output_panel.open()
   vim.schedule(function()
     local buf = neotest.output_panel.buffer()
@@ -97,6 +120,17 @@ local function open_test_ui()
       tool_panel.show_buf(buf, { focus = false })
     end
   end)
+
+  local client = neotest.workspace and neotest.workspace.client
+  if client then
+    discovery.ensure_discovered(client, {
+      on_ready = function()
+        pcall(function()
+          require("neotest").summary.render()
+        end)
+      end,
+    })
+  end
 end
 
 local function run_with_ui(run_fn)
@@ -106,47 +140,130 @@ local function run_with_ui(run_fn)
   end
 end
 
---- Pick a single adapter for suite run (never fire all adapters on one root).
-local function suite_adapter_id()
-  local neotest = require("neotest")
-  local path = vim.fn.expand("%:p")
-  local ids = neotest.state.adapter_ids()
-
-  if path ~= "" and #ids > 0 then
-    for _, adapter_id in ipairs(ids) do
-      local tree = neotest.state.positions(adapter_id)
-      if tree and tree:get_key(path) then
-        return adapter_id
+local function adapter_has_path(neotest, adapter_id, path)
+  local tree = neotest.state.positions(adapter_id)
+  if not tree then
+    return false
+  end
+  local prefix = vim.fs.normalize(path)
+  prefix = prefix:sub(-1) == "/" and prefix or (prefix .. "/")
+  for _, position in tree:iter() do
+    if position.path then
+      local position_path = vim.fs.normalize(position.path)
+      if position_path == path or position_path:sub(1, #prefix) == prefix then
+        return true
       end
     end
   end
-
-  for _, adapter_id in ipairs(ids) do
-    if adapter_id:find("gradle", 1, true) then
-      return adapter_id
-    end
-  end
-
-  return ids[1]
+  return false
 end
 
-local function run_suite()
+local function run_discovered_suites(adapter_ids, path)
   local neotest = require("neotest")
-  local adapter_id = suite_adapter_id()
-  if adapter_id then
-    neotest.run.run({ suite = true, adapter = adapter_id })
+  local to_run = {}
+  for _, adapter_id in ipairs(discovery.runnable_adapter_ids(adapter_ids)) do
+    if not path or adapter_has_path(neotest, adapter_id, path) then
+      to_run[#to_run + 1] = adapter_id
+    end
+  end
+  if #to_run == 0 then
+    vim.notify(
+      path and ("No test suites under " .. path) or "No test suites discovered",
+      vim.log.levels.INFO,
+      { title = "neotest" }
+    )
     return
   end
 
-  -- Cold start: wait briefly for discovery after opening the summary
-  vim.defer_fn(function()
-    local id = suite_adapter_id()
-    if id then
-      neotest.run.run({ suite = true, adapter = id })
-    else
-      neotest.run.run(vim.uv.cwd())
+  -- Schedule each suite from the main loop so nio.create does not await the
+  -- previous suite (which would serialize Maven before Vitest, and abort the
+  -- rest if the output-panel terminal listener throws).
+  for _, adapter_id in ipairs(to_run) do
+    vim.schedule(function()
+      if path then
+        neotest.run.run({ path, adapter = adapter_id })
+      else
+        neotest.run.run({ suite = true, adapter = adapter_id })
+      end
+    end)
+  end
+end
+
+local function run_after_discovery(path)
+  local neotest = require("neotest")
+  local client = neotest.workspace and neotest.workspace.client
+  if not client then
+    neotest.summary.open({ enter = false })
+    discovery.set_loading("Discovering tests…")
+    local started = vim.uv.now()
+    local previous
+    local stable_since
+    local function poll()
+      local adapter_ids = neotest.state.adapter_ids()
+      local signature = discovery.positions_signature(adapter_ids)
+      if signature ~= previous then
+        previous = signature
+        stable_since = vim.uv.now()
+        discovery.set_loading(("Discovering tests… %d suite(s)"):format(#adapter_ids))
+      end
+      if #adapter_ids > 0 and stable_since and vim.uv.now() - stable_since >= 600 then
+        discovery.set_loading(nil)
+        run_discovered_suites(adapter_ids, path)
+      elseif vim.uv.now() - started < 45000 then
+        vim.defer_fn(poll, 150)
+      else
+        discovery.set_loading(nil)
+        if #adapter_ids > 0 then
+          run_discovered_suites(adapter_ids, path)
+        else
+          vim.notify("No test suites discovered", vim.log.levels.INFO, { title = "neotest" })
+        end
+      end
     end
-  end, 200)
+    vim.defer_fn(poll, 100)
+    return
+  end
+
+  discovery.wait_then_run(client, {
+    path = path,
+    on_ready = function(adapter_ids)
+      run_discovered_suites(adapter_ids, path)
+    end,
+  })
+end
+
+local function run_suite()
+  run_after_discovery()
+end
+
+local function explorer_directory()
+  local ok, pickers = pcall(function()
+    return Snacks.picker.get({ source = "explorer", tab = false })
+  end)
+  if not ok then
+    return nil
+  end
+  for _, picker in ipairs(pickers) do
+    if picker:is_focused() then
+      local item = picker:current()
+      if item and item.file then
+        return item.dir and item.file or vim.fs.dirname(item.file)
+      end
+    end
+  end
+end
+
+local function run_directory()
+  local path = explorer_directory()
+  if not path then
+    local current = vim.fn.expand("%:p")
+    path = vim.fn.isdirectory(current) == 1 and current or vim.fs.dirname(current)
+  end
+  if not path or path == "" then
+    vim.notify("No directory selected", vim.log.levels.INFO, { title = "neotest" })
+    return
+  end
+  run_after_discovery(vim.fs.normalize(path))
 end
 
 local function run_failed()
@@ -263,8 +380,8 @@ return {
       "nvim-lua/plenary.nvim",
       "nvim-treesitter/nvim-treesitter",
       "mfussenegger/nvim-dap",
+      "stevearc/overseer.nvim",
       "weilbith/neotest-gradle",
-      "rcasia/neotest-java",
       "nvim-neotest/neotest-jest",
       "marilari88/neotest-vitest",
       "nvim-neotest/neotest-python",
@@ -288,10 +405,8 @@ return {
       },
       {
         "<leader>Td",
-        run_with_ui(function()
-          require("neotest").run.run(vim.fn.expand("%:p:h"))
-        end),
-        desc = "Run tests in directory",
+        run_with_ui(run_directory),
+        desc = "Run tests in selected directory",
       },
       {
         "<leader>Ta",
@@ -387,42 +502,137 @@ return {
       },
     },
     config = function()
-      if vim.fn.executable("cargo-nextest") ~= 1 and vim.fn.executable("nextest") ~= 1 then
-        vim.notify_once(
-          "neotest-rust needs cargo-nextest (`cargo install cargo-nextest`)",
-          vim.log.levels.WARN,
-          { title = "neotest" }
-        )
-      end
-
       setup_summary_mouse()
 
+      local neotest_lib = require("neotest.lib")
+      local neotest_config = require("neotest.config")
+
+      -- Label stacked adapters with their project folder (backend / frontend).
+      -- summary.lua returns a factory; the Summary class is a closed-over upvalue.
+      local summary_factory = require("neotest.consumers.summary.summary")
+      local Summary
+      for i = 1, 8 do
+        local name, value = debug.getupvalue(summary_factory, i)
+        if name == "Summary" then
+          Summary = value
+          break
+        end
+      end
+      if Summary and Summary._write_header then
+        local orig_write_header = Summary._write_header
+        function Summary:_write_header(canvas, adapter_id, tree)
+          local label = discovery.adapter_header_label(adapter_id)
+          local orig_write = canvas.write
+          local replaced = false
+          canvas.write = function(self, text, opts)
+            if
+              not replaced
+              and opts
+              and opts.group == neotest_config.highlights.adapter_name
+            then
+              replaced = true
+              return orig_write(self, label, opts)
+            end
+            return orig_write(self, text, opts)
+          end
+          orig_write_header(self, canvas, adapter_id, tree)
+          canvas.write = orig_write
+        end
+      end
+
+      -- Neotest's default chooser can mistake another normal-looking tool
+      -- window for the editor. Always send summary jumps to an editor window.
+      neotest_lib.ui.open_buf = function(bufnr, line, column)
+        require("config.tool_panel").open_in_editor(bufnr, line, column)
+      end
+
+      -- Reusing the shared output dock means the panel buffer may already be a
+      -- terminal when a second adapter streams results. Reuse the existing
+      -- channel instead of calling nvim_open_term again (which aborts the suite).
+      local orig_open_term = neotest_lib.ui.open_term
+      neotest_lib.ui.open_term = function(buf, opts)
+        if type(buf) == "number" and vim.api.nvim_buf_is_valid(buf) then
+          for _, info in ipairs(vim.api.nvim_list_chans()) do
+            if info.buffer == buf and info.mode == "terminal" then
+              return info.id
+            end
+          end
+        end
+        local ok, chan_or_err = pcall(orig_open_term, buf, opts)
+        if ok then
+          return chan_or_err
+        end
+        if type(buf) == "number" and vim.api.nvim_buf_is_valid(buf) then
+          for _, info in ipairs(vim.api.nvim_list_chans()) do
+            if info.buffer == buf and info.mode == "terminal" then
+              return info.id
+            end
+          end
+        end
+        error(chan_or_err)
+      end
+
       require("neotest").setup({
+        icons = require("config.neotest_icons"),
+        default_strategy = "overseer",
+        strategies = {
+          overseer = {
+            components = { "default_neotest" },
+          },
+        },
+        overseer = {
+          enabled = true,
+          force_default = true,
+        },
         adapters = {
+          maven_adapter(),
           gradle_adapter(),
-          java_adapter(),
-          gate_js_adapter(require("neotest-jest")({
-            jestCommand = "npm test --",
-            cwd = function()
-              return vim.fn.getcwd()
-            end,
-          })),
-          gate_js_adapter(require("neotest-vitest")({
-            filter_dir = function(name)
-              return name ~= "node_modules"
-            end,
-          })),
+          gate_js_adapter(
+            require("neotest-jest")({
+              jestCommand = "npm test --",
+              cwd = js_package_cwd,
+            }),
+            "jest"
+          ),
+          gate_js_adapter(
+            require("neotest-vitest")({
+              cwd = js_package_cwd,
+              filter_dir = function(name)
+                return name ~= "node_modules"
+                  and name ~= "dist"
+                  and name ~= "coverage"
+                  and name ~= "storybook-static"
+              end,
+            }),
+            "vitest"
+          ),
           require("neotest-python")({
             dap = { justMyCode = false },
             runner = "pytest",
           }),
           require("neotest-golang")({}),
-          require("neotest-rust")({
-            args = { "--no-capture" },
-            dap_adapter = "codelldb",
-          }),
+          rust_adapter(),
         },
         consumers = {
+          overseer = require("neotest.consumers.overseer"),
+          --- Seed nested Maven/npm roots and wait until expected suites appear.
+          workspace = function(client)
+            client.listeners.started = function()
+              discovery.ensure_discovered(client, {
+                on_ready = function()
+                  pcall(function()
+                    require("neotest").summary.render()
+                  end)
+                end,
+              })
+            end
+            return {
+              client = client,
+              refresh = function(anchor)
+                return discovery.refresh_adapters(client, anchor)
+              end,
+            }
+          end,
           --- Track failed tests for <leader>TF
           failed = function(client)
             ---@type table<string, table<string, boolean>>
@@ -476,7 +686,7 @@ return {
         },
         output = {
           enabled = true,
-          open_on_run = "short",
+          open_on_run = false,
         },
         output_panel = {
           enabled = true,
