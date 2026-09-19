@@ -19,12 +19,13 @@ This repo is meant to be **public-safe**:
 - shell tool installer for nvm, Node 25, npm globals, SDKMAN, Java 25.0.2-amzn, rbenv, and Ruby
 - theme CLI under `stow/themes` (see `stow/themes/.config/themes/README.md`)
 - Waybar widgets + NetHogs setup via `scripts/setup-network-usage.sh`
-- small helpers: `scripts/closeports.sh`, `scripts/gh-delete-all-artifact/`
+- day-to-day helpers under the stow `scripts` package (`closeports`, `gh-delete-all-artifact`, …)
 
 ## Structure
 - `stow/` — actual dotfiles, grouped by package
 - `packages/` — package manifests for reinstalling apps
-- `scripts/` — helper scripts
+- `scripts/` — repo/bootstrap helpers (run as `./scripts/...` from the clone)
+- `stow/scripts/` — stow package linked to `~/scripts` for day-to-day commands
 - `bootstrap.sh` — OS router (Linux → `bootstrap-linux.sh`, macOS → `bootstrap-macos.sh`)
 
 ## Stow packages by OS
@@ -176,6 +177,7 @@ Run the Python regression suites with:
 
 ```bash
 python3 -m unittest discover -s scripts/tests -v
+python3 -m unittest discover -s stow/scripts/scripts/gh-delete-all-artifact/tests -v
 python3 -m unittest discover -s stow/waybar/.config/waybar/scripts/tests -v
 ```
 
