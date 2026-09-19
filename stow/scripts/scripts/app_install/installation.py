@@ -2,7 +2,6 @@
 
 import json
 import os
-import shlex
 import shutil
 import subprocess
 import tempfile
@@ -10,7 +9,7 @@ import uuid
 from pathlib import Path
 
 from .bundles import executable, extract_tar
-from .common import fail, identifier, replace_file
+from .common import fail, identifier, replace_file, resolve_password_store, wrapper_script
 from .desktop import desktop_escape, desktop_read, exec_quote, refresh_desktops
 from .icons import prepare_icon
 from .registry import installations, select_app
@@ -103,10 +102,8 @@ def install_app(args, root, bins, desktops):
         )
         if not (preserve_launcher and desktop.get("Exec")):
             desktop["Exec"] = desktop_escape(exec_quote(str(bin_path)) + " %U")
-        command = shlex.quote(str(parent / "current" / launcher))
-        if kind == "appimage":
-            command += " --appimage-extract-and-run"
-        wrapper = "#!/usr/bin/env bash\nset -euo pipefail\nexec " + command + ' "$@"\n'
+        password_store = resolve_password_store(getattr(args, "password_store", None), existing)
+        wrapper = wrapper_script(parent / "current" / launcher, kind, password_store)
         metadata = {
             "id": app_id,
             "name": name,
@@ -114,6 +111,8 @@ def install_app(args, root, bins, desktops):
             "executable": launcher,
             "desktop": desktop,
         }
+        if password_store:
+            metadata["password_store"] = password_store
         os.replace(payload, release)
         if saved_icon:
             os.replace(stage / saved_icon.name, saved_icon)

@@ -2,11 +2,10 @@
 
 import json
 import os
-import shlex
 import shutil
 
 from .bundles import executable
-from .common import fail, identifier, replace_file
+from .common import fail, identifier, replace_file, resolve_password_store, wrapper_script
 from .desktop import desktop_escape, desktop_read, exec_quote, refresh_desktops
 from .registry import find_named, installations, select_app
 
@@ -63,11 +62,13 @@ def manage_app(args, root, bins, desktops):
                 "gitkraken": ["gitkraken", "resources/bin/gitkraken.sh"],
             }
             launch = executable(payload, hints.get(old_id), app.get("executable"), old_id)
-        command = shlex.quote(str(payload / launch))
-        if app["type"] == "appimage":
-            command += " --appimage-extract-and-run"
-        wrapper = "#!/usr/bin/env bash\nset -euo pipefail\nexec " + command + ' "$@"\n'
+        password_store = resolve_password_store(None, app)
+        wrapper = wrapper_script(payload / launch, app["type"], password_store)
         app["executable"] = launch
+        if password_store:
+            app["password_store"] = password_store
+        else:
+            app.pop("password_store", None)
     desktop = desktop_read(old_desktop) or app.get("desktop", {})
     desktop.update(
         {

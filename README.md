@@ -83,6 +83,7 @@ app-install ./Something.AppImage
 app-install ./Something-2.0.AppImage --name Something --icon ./something.svg
 app-install ./Something-3.0.AppImage --update
 app-install ./Something.tar.gz --name Something --exec bin/something
+app-install ./Cursor.AppImage --name Cursor --password-store gnome-libsecret
 app-install ./Something.AppImage --dry-run
 app-install --rename Something --name Something-2.0
 app-install --rename Something
@@ -91,6 +92,7 @@ app-install --remove --name Something
 app-install --list
 app-install --edit --name Something --categories "Development;IDE;"
 app-install --edit --categories "Game;"  # select an installed app
+app-install --edit --name Cursor --password-store gnome-libsecret
 ```
 
 - `--name` defaults to the filename without its extension. Use a stable name for
@@ -100,6 +102,13 @@ app-install --edit --categories "Game;"  # select an installed app
   `--name Something` with `--update` to select an existing app without prompting.
 - Icons persist across updates. `--icon` explicitly replaces the saved icon;
   otherwise new installs try bundled icons and fall back to a generic icon.
+- `--password-store` sets a Chromium/Electron keyring backend
+  (`gnome-libsecret`, `gnome`, `kwallet5`, `kwallet6`, `kwallet`, or `basic`)
+  injected into the launcher wrapper. Useful on Hyprland and other sessions
+  where Electron cannot auto-detect an OS keyring. The value is stored in
+  `app-install.json` and kept across updates unless you pass a new value.
+  With `--edit`, an empty `--password-store ''` clears it and rewrites the
+  wrapper without the flag.
 - Tarball launchers are detected when unambiguous. Use `--exec` relative to the
   app root (after removing a single enclosing directory) when necessary.
 - `--rename NEW_NAME` changes the display name and launcher command. Pass the
@@ -109,11 +118,13 @@ app-install --edit --categories "Game;"  # select an installed app
   categories. Optionally filter by `--name`.
 - `--edit` updates desktop metadata without reinstalling. Supply `--name` or
   select an app interactively. Supported fields are `--categories`, `--comment`
-  (description), `--keywords`, `--startup-class`, `--icon`, and
-  `--terminal` / `--no-terminal`. Categories and keywords use semicolon-separated
-  lists; quote them in the shell. Empty strings clear text fields. Omitted fields
-  remain unchanged, and `--dry-run` previews changes. Use `--rename` to change
-  the app's name and command.
+  (description), `--keywords`, `--startup-class`, `--icon`,
+  `--password-store`, and `--terminal` / `--no-terminal`. Categories and
+  keywords use semicolon-separated lists; quote them in the shell. Empty
+  strings clear text fields (and `--password-store`). Omitted fields remain
+  unchanged, and `--dry-run` previews changes. Use `--rename` to change the
+  app's name and command. Changing `--password-store` also rewrites the bin
+  wrapper.
 - `--uninstall` (alias `--remove`) lists all managed apps to choose from, or
   removes the app selected by `--name`. It removes the installation directory,
   including saved icons and previous releases, plus its command and desktop

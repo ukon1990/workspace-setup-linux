@@ -246,10 +246,13 @@ main() {
         archive="$(find_one_regex "$APP_REGEX_cursor" || true)"
         if [[ -n "$archive" ]]; then
           if [[ "${archive,,}" == *.appimage ]]; then
-            install_appimage "$archive" "Cursor" cursor Cursor "Development;IDE;" cursor 1
+            "$APP_INSTALL" "$archive" --name Cursor --id cursor \
+              --startup-class Cursor --categories "Development;IDE;" \
+              --password-store gnome-libsecret --preserve-launcher
           else
             "$APP_INSTALL" "$archive" --name Cursor --id cursor --exec cursor --exec bin/cursor \
-              --startup-class Cursor --categories "Development;IDE;"
+              --startup-class Cursor --categories "Development;IDE;" \
+              --password-store gnome-libsecret
           fi
         else
           installed="$(is_installed_cursor && echo yes || echo no)"

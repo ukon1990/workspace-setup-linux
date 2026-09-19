@@ -66,6 +66,35 @@ class InstallTests(unittest.TestCase):
     def metadata(self, app="something"):
         return json.loads((self.root / "apps" / app / "app-install.json").read_text())
 
+    def test_password_store_persists_across_update_and_edit(self):
+        self.run_install(
+            self.appimage(), "--name", "Something", "--password-store", "gnome-libsecret"
+        )
+        wrapper = (self.bins / "something").read_text()
+        self.assertIn("--password-store=gnome-libsecret", wrapper)
+        self.assertEqual(self.metadata()["password_store"], "gnome-libsecret")
+        self.run_install(self.appimage("Something-2.AppImage", "two"), "--name", "Something")
+        self.assertIn("--password-store=gnome-libsecret", (self.bins / "something").read_text())
+        self.assertEqual(self.metadata()["password_store"], "gnome-libsecret")
+        self.run_install(
+            self.appimage("Something-3.AppImage", "three"),
+            "--name",
+            "Something",
+            "--password-store",
+            "kwallet5",
+        )
+        self.assertIn("--password-store=kwallet5", (self.bins / "something").read_text())
+        self.assertEqual(self.metadata()["password_store"], "kwallet5")
+        self.run_install("--edit", "--name", "Something", "--password-store", "gnome-libsecret")
+        self.assertIn("--password-store=gnome-libsecret", (self.bins / "something").read_text())
+        self.assertEqual(self.metadata()["password_store"], "gnome-libsecret")
+        self.run_install("--edit", "--name", "Something", "--password-store", "")
+        self.assertNotIn("--password-store=", (self.bins / "something").read_text())
+        self.assertNotIn("password_store", self.metadata())
+        self.run_install(
+            self.appimage(), "--name", "Something", "--password-store", "nope", success=False
+        )
+
     def test_entry_points_from_another_directory(self):
         linked_command = self.base / "app-install"
         linked_command.symlink_to(SCRIPT)
@@ -167,10 +196,11 @@ class InstallTests(unittest.TestCase):
             keywords=None,
             terminal=None,
             icon=None,
+            password_store=None,
             dry_run=False,
         )
         with patch.object(metadata, "select_app", return_value=None) as select:
-            metadata.edit_app(args, self.root, self.desktops)
+            metadata.edit_app(args, self.root, self.bins, self.desktops)
             self.assertEqual(select.call_args.args[1], "edit")
         self.assertEqual(self.metadata(), before)
 

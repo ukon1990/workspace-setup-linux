@@ -7,6 +7,7 @@ import sys
 import tarfile
 from pathlib import Path
 
+from .common import PASSWORD_STORES
 from .installation import install_app
 from .management import manage_app
 from .metadata import edit_app, list_apps
@@ -18,12 +19,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Examples:\n  app-install ./Something.AppImage --name Something\n"
         "  app-install ./Something.AppImage --update\n"
+        "  app-install ./Cursor.AppImage --name Cursor --password-store gnome-libsecret\n"
         "  app-install --rename Something --name Something-1.0\n"
         "  app-install --rename Something    # select an installed app\n"
         "  app-install --uninstall           # select an installed app\n"
         "  app-install --remove --name Something\n"
         "  app-install --list\n"
-        '  app-install --edit --name Something --categories "Development;IDE;"',
+        '  app-install --edit --name Something --categories "Development;IDE;"\n'
+        "  app-install --edit --name Cursor --password-store gnome-libsecret",
     )
     parser.add_argument("archive", type=Path, nargs="?")
     parser.add_argument(
@@ -66,6 +69,15 @@ def main():
         default=None,
         help="Run in a terminal, or --no-terminal (with --edit)",
     )
+    parser.add_argument(
+        "--password-store",
+        metavar="BACKEND",
+        help=(
+            "Chromium/Electron password-store backend injected into the launcher "
+            f"({', '.join(PASSWORD_STORES)}); omit to keep an existing value, "
+            "pass an empty string with --edit to clear"
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--id", help="Explicit stable launcher identifier (integration)")
     parser.add_argument("--subdir", choices=("apps", "jetbrains"), default="apps")
@@ -85,6 +97,7 @@ def main():
         args.keywords,
         args.terminal,
         args.icon,
+        args.password_store,
     )
     if args.list or args.edit:
         if (
@@ -101,8 +114,11 @@ def main():
             list_apps(args, root, desktops)
         else:
             if all(value is None for value in edit_values):
-                parser.error("--edit requires a metadata option such as --categories or --icon.")
-            edit_app(args, root, desktops)
+                parser.error(
+                    "--edit requires a metadata option such as --categories, --icon, "
+                    "or --password-store."
+                )
+            edit_app(args, root, bins, desktops)
         return
     if any(value is not None for value in (args.comment, args.keywords, args.terminal)):
         parser.error("--comment, --keywords and --terminal require --edit.")
@@ -115,6 +131,7 @@ def main():
             or args.categories
             or args.startup_class
             or args.preserve_launcher
+            or args.password_store is not None
             or args.subdir != "apps"
         ):
             parser.error("Rename/uninstall accepts only --name and --dry-run alongside the action.")

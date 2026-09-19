@@ -6,7 +6,8 @@ import re
 import shutil
 import uuid
 
-from .common import fail, replace_file
+from .bundles import executable
+from .common import fail, replace_file, resolve_password_store, wrapper_script
 from .desktop import desktop_escape, desktop_read, desktop_unescape, refresh_desktops
 from .registry import find_named, installations, select_app
 
@@ -76,8 +77,26 @@ def update_desktop_text(text, changes):
     return "\n".join(output) + "\n"
 
 
-def edit_app(args, root, desktops):
+def launcher_name(app):
+    payload = app["parent"] / "current"
+    if app.get("executable"):
+        return app["executable"]
+    if app["type"] == "appimage":
+        candidates = [p.name for p in payload.iterdir() if p.suffix.lower() == ".appimage"]
+        if len(candidates) != 1:
+            fail("Cannot determine the installed AppImage launcher.")
+        return candidates[0]
+    hints = {
+        "intellij-idea": ["bin/idea", "bin/idea.sh"],
+        "rider": ["bin/rider", "bin/rider.sh"],
+        "gitkraken": ["gitkraken", "resources/bin/gitkraken.sh"],
+    }
+    return executable(payload, hints.get(app["id"]), None, app["id"])
+
+
+def edit_app(args, root, bins, desktops):
     changes = desktop_changes(args)
+    password_store_arg = getattr(args, "password_store", None)
     if args.icon and (
         not args.icon.is_file() or args.icon.suffix.lower() not in (".svg", ".png", ".xpm")
     ):
@@ -90,23 +109,47 @@ def edit_app(args, root, desktops):
     path = desktops / f"{app['id']}.desktop"
     if not path.is_file():
         fail(f"Desktop entry missing: {path}. Reinstall the app to recreate it.")
+    if password_store_arg is not None:
+        password_store = resolve_password_store(password_store_arg, None)
+    else:
+        password_store = resolve_password_store(None, app)
     if args.dry_run or os.environ.get("DRY_RUN") == "1":
         print(f"Would edit {app['name']}:")
         for key, value in changes.items():
             print(f"  {key}={value}")
         if args.icon:
             print(f"  Icon={args.icon.resolve()}")
+        if password_store_arg is not None:
+            print(f"  password_store={password_store or ''}")
         return
     if args.icon:
         icon = app["parent"] / ("icon-" + uuid.uuid4().hex + args.icon.suffix.lower())
         shutil.copy2(args.icon, icon)
         changes["Icon"] = desktop_escape(str(icon))
-    text = update_desktop_text(path.read_text(), changes)
-    desktop = desktop_read(path)
-    desktop.update(changes)
+    if changes:
+        text = update_desktop_text(path.read_text(), changes)
+        desktop = desktop_read(path)
+        desktop.update(changes)
+        replace_file(path, text)
+    else:
+        desktop = desktop_read(path) or app.get("desktop", {})
     app["desktop"] = desktop
+    if password_store_arg is not None:
+        launch = launcher_name(app)
+        app["executable"] = launch
+        bins.mkdir(parents=True, exist_ok=True)
+        replace_file(
+            bins / app["id"],
+            wrapper_script(app["parent"] / "current" / launch, app["type"], password_store),
+            0o755,
+        )
+        if password_store:
+            app["password_store"] = password_store
+        else:
+            app.pop("password_store", None)
     metadata = {key: value for key, value in app.items() if key != "parent"}
-    replace_file(path, text)
     replace_file(app["parent"] / "app-install.json", json.dumps(metadata, indent=2) + "\n")
-    refresh_desktops(desktops)
-    print(f"Updated desktop metadata for {desktop_unescape(desktop.get('Name', app['name']))}")
+    if changes or args.icon:
+        refresh_desktops(desktops)
+    label = desktop_unescape(desktop.get("Name", app["name"]))
+    print(f"Updated desktop metadata for {label}")
