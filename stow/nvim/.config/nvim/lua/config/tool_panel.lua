@@ -10,6 +10,7 @@ local MAX_HISTORY = 12
 ---@field primary_win? integer
 ---@field output_wins integer[]
 ---@field history integer[]
+---@field slots? table<string, integer>
 ---@field sidebar_win? integer
 ---@field sidebar_kind? "tasks"|"tests"
 ---@field tests_status? string
@@ -389,6 +390,40 @@ function M.show_buf(bufnr, opts)
   end
   M.refresh_tabs()
   return win
+end
+
+-- Update an owning tab without switching tabs or opening a background dock.
+function M.replace_output(key, bufnr, opts)
+  opts = opts or {}
+  local tab = opts.tab or vim.api.nvim_get_current_tabpage()
+  if not vim.api.nvim_tabpage_is_valid(tab) or not vim.api.nvim_buf_is_valid(bufnr) then return end
+  setup_once()
+  local state = state_for(tab)
+  state.slots = state.slots or {}
+  local old = state.slots[key]
+  state.slots[key] = bufnr
+  if opts.label then vim.b[bufnr].tool_panel_label = opts.label end
+  local replaced = false
+  for i, buf in ipairs(state.history) do
+    if buf == old or buf == bufnr then
+      state.history[i] = bufnr
+      replaced = true
+      break
+    end
+  end
+  if not replaced then remember(state, bufnr) end
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+    if vim.w[win].tool_panel_role == "output" and (vim.api.nvim_win_get_buf(win) == old or win == state.primary_win) then
+      set_win_buf(win, bufnr)
+      map_tabs_for_buf(win, bufnr)
+    end
+  end
+  if tab == vim.api.nvim_get_current_tabpage() and not win_ok(state.primary_win) then
+    local win = M.ensure_win({ focus = false })
+    set_win_buf(win, bufnr)
+    map_tabs_for_buf(win, bufnr)
+  end
+  M.refresh_tabs()
 end
 
 ---@param delta integer

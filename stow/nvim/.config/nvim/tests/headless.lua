@@ -435,4 +435,6 @@ local after = tools._cache_stats()
 eq(after.misses, before.misses + 1, "project discovery cache miss count")
 eq(after.hits, before.hits + 2, "project discovery cache hit count")
 
+dofile(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)) .. "/neotest_runner.lua")
+
 print("nvim headless tests: ok")

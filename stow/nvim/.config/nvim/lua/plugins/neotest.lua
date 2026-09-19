@@ -726,6 +726,7 @@ return {
           open = false,
         },
       })
+      require("config.neotest_runner").install(require("neotest"), require("neotest").workspace.client)
     end,
   },
 }

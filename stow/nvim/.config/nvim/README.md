@@ -49,6 +49,8 @@ Tasks and Tests share the right rail rather than creating competing splits. Buil
 
 Use `<S-h>` and `<S-l>` inside the output dock to switch its tabs. Narrow task/test trees do not wrap; scroll horizontally to reveal clipped text.
 
+Pressing `r` on a Tests Summary folder reuses that folder's output slot, replacing the previous output. An active suite is stopped and its results finish processing before the replacement starts; rapid reruns keep only the latest request. Ownership includes the full selected folder path, full adapter identity, and originating tabpage—not the runner's working directory or display label. Other folders/adapters/tabs remain independent, and background output never changes keyboard focus. Adapters producing multiple execution specs retain a separate slot for each spec. The same behavior applies to directory/suite shortcuts and Run last; individual tests, debug runs, and the aggregate output panel keep their existing behavior.
+
 `<leader>Ta` / `<leader>Tu` seed Maven, Gradle, and npm roots that actually declare a runner (Vitest/Jest/react-scripts), keep a Tests-rail loading state until expected adapters (e.g. `neotest-maven · backend` and `neotest-vitest · frontend`) have non-empty trees, then stack those suites in the rail. Nested packages under a Vitest root (e.g. `frontend/ethereal-ui`) stay on Vitest. Suite runs use Overseer so each runner gets its own bottom-dock tab (`tests: backend`, `tests: frontend`). `<leader>tt` opens the shell in that same dock tab group. `<leader>Td` narrows suite runs to the Explorer/current-buffer directory. Maven Java/Kotlin uses `./mvnw`; Gradle uses `neotest-gradle`. Rust only activates in Cargo projects. Summary jumps reuse a normal editor window.
 
 ## Task discovery and errors

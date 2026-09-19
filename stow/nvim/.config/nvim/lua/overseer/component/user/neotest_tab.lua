@@ -18,10 +18,21 @@ return {
   constructor = function()
     return {
       on_pre_start = function(_, task)
+        if task.metadata.neotest_runner then return end
         local label = discovery.runner_tab_label(task.cwd)
         task.name = label
       end,
       on_start = function(_, task)
+        local runner = task.metadata.neotest_runner
+        if runner then
+          vim.schedule(function()
+            local buf = task:get_bufnr()
+            if runner.valid() and buf and vim.api.nvim_buf_is_valid(buf) then
+              tool_panel.replace_output(runner.key, buf, { tab = runner.tab, label = runner.label })
+            end
+          end)
+          return
+        end
         local label = discovery.runner_tab_label(task.cwd)
         task.name = label
         vim.schedule(function()
