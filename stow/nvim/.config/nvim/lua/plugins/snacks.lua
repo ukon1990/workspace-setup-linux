@@ -11,7 +11,12 @@ return {
       words = { enabled = true },
       input = { enabled = true },
       explorer = { enabled = true },
-      picker = { enabled = true },
+      picker = {
+        enabled = true,
+        sources = {
+          explorer = { hidden = true },
+        },
+      },
       terminal = { enabled = true },
     },
     keys = {
