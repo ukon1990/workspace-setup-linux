@@ -36,5 +36,10 @@ opt.fillchars = { eob = " " }
 opt.confirm = true
 opt.pumheight = 12
 
+-- Reflect "nvim - <workspace> - <file>" in the terminal/window title so the
+-- Kitty tab/window title stays useful when switching between projects.
+opt.title = true
+opt.titlestring = [[nvim - %{fnamemodify(getcwd(), ':t')} - %t%( %M%)]]
+
 -- Prefer dark theme; colorscheme plugin will set the palette
 vim.o.background = "dark"

@@ -21,8 +21,8 @@ return {
       "mason-org/mason.nvim",
       "neovim/nvim-lspconfig",
     },
-    opts = {
-      ensure_installed = {
+    opts = function()
+      local ensure_installed = {
         "lua_ls",
         "ts_ls",
         "angularls",
@@ -35,13 +35,20 @@ return {
         "marksman",
         "kotlin_lsp",
         "jdtls",
-        "csharp_ls",
-      },
-      -- jdtls is started via nvim-jdtls / ftplugin/java.lua
-      automatic_enable = {
-        exclude = { "jdtls" },
-      },
-    },
+      }
+      -- csharp_ls requires the .NET SDK to install/run; skip it when `dotnet`
+      -- isn't on PATH so Mason doesn't repeatedly fail-install it every start.
+      if vim.fn.executable("dotnet") == 1 then
+        table.insert(ensure_installed, "csharp_ls")
+      end
+      return {
+        ensure_installed = ensure_installed,
+        -- jdtls is started via nvim-jdtls / ftplugin/java.lua
+        automatic_enable = {
+          exclude = { "jdtls" },
+        },
+      }
+    end,
   },
   {
     "neovim/nvim-lspconfig",
@@ -118,6 +125,41 @@ return {
       })
 
       -- Kotlin: JetBrains kotlin-lsp; prefer Gradle/Maven root; fall back to file dir
+      -- Terminate any intellij-server processes already bound to this
+      -- project's system-path. kotlin_lsp is detached (survives crashes /
+      -- force-kills), so orphans can accumulate and hold the RocksDB index
+      -- LOCK, making new servers fail with "Resource temporarily unavailable".
+      -- If a live client already existed for this root in the *current*
+      -- Neovim instance, lspconfig would reuse it instead of calling this
+      -- cmd() again, so anything found here is guaranteed to be an orphan.
+      local function stop_stale_kotlin_lsp(system)
+        if vim.fn.executable("pgrep") ~= 1 then
+          return
+        end
+        local escaped = system:gsub("([%.%^%$%*%+%?%(%)%[%]%{%}%|\\])", "\\%1")
+        local pattern = "intellij-server.*--system-path=" .. escaped
+        local pids = vim.fn.systemlist({ "pgrep", "-f", pattern })
+        if vim.v.shell_error ~= 0 or #pids == 0 then
+          return
+        end
+        for _, pid in ipairs(pids) do
+          pid = tonumber(pid)
+          if pid then
+            pcall(vim.uv.kill, pid, "sigterm")
+          end
+        end
+        vim.uv.sleep(300)
+        local remaining = vim.fn.systemlist({ "pgrep", "-f", pattern })
+        if vim.v.shell_error == 0 then
+          for _, pid in ipairs(remaining) do
+            pid = tonumber(pid)
+            if pid then
+              pcall(vim.uv.kill, pid, "sigkill")
+            end
+          end
+        end
+      end
+
       vim.lsp.config("kotlin_lsp", {
         -- Per-project system path avoids cross-talk; still only one server per project
         -- may hold the shared RocksDB index lock.
@@ -127,6 +169,7 @@ return {
           local name = vim.fn.fnamemodify(root, ":t")
           local system = vim.fn.stdpath("cache") .. "/kotlin-lsp-workspaces/" .. name .. "-" .. hash
           vim.fn.mkdir(system, "p")
+          stop_stale_kotlin_lsp(system)
           return vim.lsp.rpc.start({
             "intellij-server",
             "--stdio",
