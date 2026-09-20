@@ -11,6 +11,14 @@ Each widget owns its metric collection and presentation. Shared concerns live in
 To add a widget, implement `<name>_module(state)`, register it in the loader, and
 configure its command and interval in Waybar's `config.jsonc`.
 
+`../window_size.py` is a separate interactive controller for the
+`custom/window-size` module. It captures the focused Hyprland window, opens the
+fraction picker, and applies address-targeted geometry based on that window's
+monitor work area. Tiled entries resize the active window/group horizontally;
+the current dwindle tree may constrain the closest attainable fraction.
+Floating entries opt into full-height floating geometry. `Super+Shift+R`
+opens the picker centered over the active window for keyboard selection.
+
 State is stored per widget in `~/.config/waybar/.cache/widgets/`. On first use,
 relevant values are copied from the old `status-widgets.json`; that file is retained.
 Hyprsunset actions and display share one transaction namespace. Interactive dialogs

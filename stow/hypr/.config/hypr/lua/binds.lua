@@ -9,6 +9,7 @@ local menu = "sherlock"
 local lock_session = hypr .. "/scripts/lock-session.sh"
 local switch_user = hypr .. "/scripts/switch-user.sh"
 local screenshot_menu = hypr .. "/scripts/screenshot-menu.sh"
+local window_size_menu = home .. "/.config/waybar/scripts/window_size.py overlay"
 
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal))
 hl.bind(mainMod .. " + Q", hl.dsp.window.kill())
@@ -18,6 +19,7 @@ hl.bind(
 )
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }))
+hl.bind(mainMod .. " + SHIFT + R", hl.dsp.exec_cmd(window_size_menu))
 hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd(menu))
 hl.bind(mainMod .. " + L", hl.dsp.exec_cmd(lock_session))
 hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd(switch_user))

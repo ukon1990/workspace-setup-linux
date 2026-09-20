@@ -34,6 +34,7 @@ tooltip {
 #custom-perf-network,
 #custom-perf-disk,
 #custom-volume-mixer,
+#custom-window-size,
 #custom-theme,
 #custom-hyprsunset,
 #idle_inhibitor,
@@ -87,6 +88,7 @@ tooltip {
 #custom-perf-network,
 #custom-perf-disk,
 #custom-volume-mixer,
+#custom-window-size,
 #custom-theme,
 #custom-hyprsunset,
 #idle_inhibitor,
@@ -206,6 +208,17 @@ tooltip {
 
 #custom-volume-mixer.active {
     border-color: @primary-border-strong;
+}
+
+#custom-window-size {
+    color: @text;
+    min-width: 44px;
+    transition: all 0.18s ease;
+}
+
+#custom-window-size:hover {
+    border-color: @primary-border-strong;
+    color: @primary;
 }
 
 #custom-media {

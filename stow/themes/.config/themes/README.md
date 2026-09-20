@@ -28,6 +28,7 @@ Generated files (rewritten every time a theme is applied):
 
 - `~/.config/hypr/theme.lua` — loaded from `hyprland.lua` via `require("theme")`
 - `~/.config/waybar/colors.css` — imported from `waybar/style.css`
+- `~/.config/wofi/style.css` — shared palette styling for wofi dropdowns
 - `~/.config/mako/config` — full mako config (regenerated in place)
 - `~/.config/swappy/config` — full swappy config (regenerated in place); its
   `custom_color` tracks the palette's `primary` accent so the screenshot
@@ -84,6 +85,17 @@ The widget JSON is produced by `theme widget` and polled every 5 seconds.
 Its CSS class reflects the theme mode (`theme-light` / `theme-dark`) and
 the theme name (`theme-amber-dark`, etc), so you can target specific
 themes in `waybar/style.css` if you want per-theme tweaks.
+
+The adjacent window-size module opens a wofi dropdown for resizing the
+focused Hyprland window to `1/4`, `2/4`, `3/4`, `1/3`, `2/3`, or `1/2`
+of its monitor's usable width. The first six choices keep the window or
+group tiled and adjust its horizontal layout size as closely as the current
+dwindle tree and neighboring minimum sizes allow. The second six choices
+explicitly float it, keep its horizontal position when it still fits, and
+fill the usable monitor height. `Super+Shift+R` opens the same picker over
+the active window for arrow-key navigation and Enter selection. The generated
+wofi stylesheet is shared by this dropdown, the theme picker, and the
+screenshot menu.
 
 ## System light / dark integration
 
@@ -269,6 +281,7 @@ Rerun `theme-from-wallpaper` to refresh it when you change wallpapers.
 
 - `render_hypr(palette)` → content of `hypr/theme.lua`
 - `render_waybar(palette)` → content of `waybar/colors.css`
+- `render_wofi(palette)` → content of `wofi/style.css`
 - `render_mako(palette)` → content of `mako/config`
 
 Alpha values for each token are encoded here (not in palette JSON), so

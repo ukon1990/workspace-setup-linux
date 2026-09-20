@@ -24,6 +24,7 @@
         "custom/perf-network",
         // "custom/perf-disk",
         "custom/volume-mixer",
+        "custom/window-size",
         "custom/theme",
         "custom/hyprsunset",
         "idle_inhibitor",
@@ -143,6 +144,13 @@
         "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
         "on-scroll-up": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+",
         "on-scroll-down": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"
+    },
+
+    "custom/window-size": {
+        "format": "󰩨",
+        "tooltip": true,
+        "tooltip-format": "Resize focused window/group\nTiled by default; floating options included\nSuper+Shift+R: keyboard picker",
+        "on-click": "$HOME/.config/waybar/scripts/window_size.py menu"
     },
 
     "custom/theme": {

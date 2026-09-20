@@ -178,6 +178,7 @@ Run the Python regression suites with:
 ```bash
 python3 -m unittest discover -s scripts/tests -v
 python3 -m unittest discover -s stow/scripts/scripts/gh-delete-all-artifact/tests -v
+python3 -m unittest discover -s stow/themes/.config/themes/tests -v
 python3 -m unittest discover -s stow/waybar/.config/waybar/scripts/tests -v
 ```
 
