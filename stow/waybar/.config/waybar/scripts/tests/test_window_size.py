@@ -72,6 +72,7 @@ class WindowSizeTests(unittest.TestCase):
         self.assertEqual(command[command.index("--yoffset") + 1], "340")
         self.assertEqual(command[command.index("--height") + 1], "520")
         self.assertEqual(command[command.index("--define") + 1], "close_on_focus_loss=true")
+        self.assertIn("--insensitive", command)
 
     @patch("window_size.wofi_anchor.wofi_menu_args")
     def test_menu_delegates_anchoring_to_shared_wofi_anchor_helper(self, wofi_menu_args):

@@ -124,20 +124,27 @@ def menu_command(prompt: str, option_count: int) -> list[str]:
     return command
 
 
-def choose(prompt: str, options: list[str] | tuple[str, ...]) -> str:
+def choose(
+    prompt: str,
+    options: list[str] | tuple[str, ...],
+    anchor: wofi_anchor.DropdownAnchor | None = None,
+) -> str:
     if not shutil.which("wofi"):
         raise AudioMenuError("wofi is not installed")
     return wofi_anchor.run_wofi_menu(
         menu_command(prompt, len(options)),
         input_text="\n".join(options),
+        anchor=anchor,
     )
 
 
-def choose_device(section_name: str) -> AudioDevice | None:
+def choose_device(
+    section_name: str, anchor: wofi_anchor.DropdownAnchor | None = None
+) -> AudioDevice | None:
     devices = audio_devices(section_name)
     devices_by_label = {device.menu_label: device for device in devices}
     kind = "output" if section_name == "Sinks" else "input"
-    choice = choose(f"Audio {kind}", list(devices_by_label))
+    choice = choose(f"Audio {kind}", list(devices_by_label), anchor)
     if not choice:
         return None
     try:
@@ -178,7 +185,8 @@ def notify_error(message: str) -> None:
 
 def main() -> int:
     try:
-        choice = choose("Audio", TOP_LEVEL_OPTIONS)
+        anchor = wofi_anchor.cursor_anchor()
+        choice = choose("Audio", TOP_LEVEL_OPTIONS, anchor)
         if not choice:
             return 0
         if choice == "Open audio controls":
@@ -188,7 +196,7 @@ def main() -> int:
             section_name = SECTION_BY_OPTION[choice]
         except KeyError as exc:
             raise AudioMenuError(f"Unknown audio menu selection: {choice}") from exc
-        device = choose_device(section_name)
+        device = choose_device(section_name, anchor)
         if device is not None and not device.default:
             set_default(device)
     except AudioMenuError as exc:

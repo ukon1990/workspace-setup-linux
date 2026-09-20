@@ -82,6 +82,28 @@ class WidgetTests(unittest.TestCase):
             self.assertIsNone(loader.dispatch("hyprsunset-adjust", ["-250"]))
             self.assertEqual(handler.call_args.args[1], ["-250"])
 
+    def test_hyprsunset_menu_uses_shared_wofi_dropdown(self):
+        from widgets import hyprsunset
+
+        with (
+            patch.object(hyprsunset.shutil, "which", return_value="/usr/bin/wofi"),
+            patch.object(
+                hyprsunset.wofi_anchor,
+                "wofi_menu_args",
+                return_value=["--insensitive", "--normal-window"],
+            ) as menu_args,
+            patch.object(
+                hyprsunset.wofi_anchor,
+                "run_wofi_menu",
+                return_value="",
+            ) as run_menu,
+        ):
+            hyprsunset.hyprsunset_menu({}, [])
+
+        menu_args.assert_called_once_with(hyprsunset.MENU_WIDTH, hyprsunset.MENU_HEIGHT)
+        self.assertEqual(run_menu.call_args.args[0][-2:], ["--insensitive", "--normal-window"])
+        self.assertIn("Edit schedule…", run_menu.call_args.kwargs["input_text"])
+
     def test_process_ranking_and_pid_reuse(self):
         old = {"1": {"ticks": 100, "start": "5"}}
         current = {

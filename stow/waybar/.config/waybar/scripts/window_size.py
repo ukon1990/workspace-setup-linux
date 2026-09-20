@@ -154,6 +154,7 @@ def menu_command(mode: str, window: dict[str, Any], monitor: dict[str, Any]) -> 
         "--dynamic-lines",
     ]
     if mode == "overlay":
+        command.extend(wofi_anchor.wofi_search_args())
         try:
             window_x, window_y = (int(value) for value in window["at"])
             window_width, window_height = (int(value) for value in window["size"])

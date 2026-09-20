@@ -83,12 +83,20 @@ class ThemeTests(unittest.TestCase):
             patch.object(
                 theme.wofi_anchor,
                 "wofi_menu_args",
-                return_value=["--normal-window", "--define", "close_on_focus_loss=true"],
+                return_value=[
+                    "--insensitive",
+                    "--normal-window",
+                    "--define",
+                    "close_on_focus_loss=true",
+                ],
             ) as wofi_menu_args,
         ):
             command = theme._find_picker()
         wofi_menu_args.assert_called_once_with(theme.PICKER_WIDTH, theme.PICKER_HEIGHT)
-        self.assertEqual(command[-3:], ["--normal-window", "--define", "close_on_focus_loss=true"])
+        self.assertEqual(
+            command[-4:],
+            ["--insensitive", "--normal-window", "--define", "close_on_focus_loss=true"],
+        )
 
 
 if __name__ == "__main__":

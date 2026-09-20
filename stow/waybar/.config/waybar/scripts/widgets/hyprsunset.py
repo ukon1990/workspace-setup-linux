@@ -5,6 +5,9 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path.home() / "scripts"))
+import wofi_anchor  # noqa: E402
+
 from .common import run
 
 HYPRSUNSET_CONF = Path.home() / ".config" / "hypr" / "hyprsunset.conf"
@@ -15,6 +18,8 @@ HYPRSUNSET_DEFAULT_K = 4500
 HYPRSUNSET_DEFAULT_GAMMA = 0.9
 HYPRSUNSET_SCHED_START = "# >>> widget:schedule"
 HYPRSUNSET_SCHED_END = "# <<< widget:schedule"
+MENU_WIDTH = 280
+MENU_HEIGHT = 320
 
 
 def hyprsunset_state(state):
@@ -246,16 +251,19 @@ def hyprsunset_menu(state, _argv):
         "off",
         "Edit schedule\u2026",
     ]
-    result = subprocess.run(
-        ["wofi", "--dmenu", "--prompt", "Sunset"],
-        input="\n".join(entries),
-        capture_output=True,
-        text=True,
-        check=False,
+    choice = wofi_anchor.run_wofi_menu(
+        [
+            "wofi",
+            "--dmenu",
+            "--prompt",
+            "Sunset",
+            "--lines",
+            str(len(entries)),
+            "--no-custom-entry",
+            *wofi_anchor.wofi_menu_args(MENU_WIDTH, MENU_HEIGHT),
+        ],
+        input_text="\n".join(entries),
     )
-    if result.returncode != 0:
-        return
-    choice = result.stdout.strip()
     if not choice:
         return
     if choice.startswith("Edit schedule"):

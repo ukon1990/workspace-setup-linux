@@ -98,6 +98,7 @@ class AudioMenuTests(unittest.TestCase):
             run_menu.call_args.kwargs["input_text"],
             "Output devices\nInput devices\nOpen audio controls",
         )
+        self.assertIsNone(run_menu.call_args.kwargs["anchor"])
 
     @patch("audio_menu.choose")
     @patch("audio_menu.audio_devices")
@@ -113,20 +114,20 @@ class AudioMenuTests(unittest.TestCase):
         choose.assert_called_once_with(
             "Audio output",
             ["● Headset  ·  57", "○ Headset  ·  60"],
+            None,
         )
 
-    @patch("audio_menu.wofi_anchor.subprocess.run")
+    @patch("audio_menu.wofi_anchor.run_wofi_menu")
     @patch("audio_menu.audio_devices")
-    @patch("audio_menu.shutil.which", return_value="/usr/bin/wofi")
     def test_choose_device_resolves_non_default_through_shared_runner(
-        self, _which, audio_devices, run
+        self, audio_devices, run_menu
     ):
         selected = audio_menu.AudioDevice(60, "Headset", False)
         audio_devices.return_value = [
             audio_menu.AudioDevice(57, "Headset", True),
             selected,
         ]
-        run.return_value = subprocess.CompletedProcess([], 0, f"{selected.menu_label}\n", "")
+        run_menu.return_value = selected.menu_label
 
         self.assertEqual(audio_menu.choose_device("Sinks"), selected)
 
@@ -155,37 +156,47 @@ class AudioMenuTests(unittest.TestCase):
     @patch("audio_menu.set_default")
     @patch("audio_menu.choose_device")
     @patch("audio_menu.choose", side_effect=["Output devices"])
-    def test_main_routes_output_selection(self, _choose, choose_device, set_default):
+    @patch("audio_menu.wofi_anchor.cursor_anchor")
+    def test_main_routes_output_selection(self, cursor_anchor, _choose, choose_device, set_default):
+        anchor = audio_menu.wofi_anchor.DropdownAnchor(100, 20, 0, 48, 1920, 1032)
+        cursor_anchor.return_value = anchor
         selected = audio_menu.AudioDevice(57, "Headset", False)
         choose_device.return_value = selected
 
         self.assertEqual(audio_menu.main(), 0)
-        choose_device.assert_called_once_with("Sinks")
+        _choose.assert_called_once_with("Audio", audio_menu.TOP_LEVEL_OPTIONS, anchor)
+        choose_device.assert_called_once_with("Sinks", anchor)
         set_default.assert_called_once_with(selected)
 
     @patch("audio_menu.set_default")
     @patch("audio_menu.choose_device")
     @patch("audio_menu.choose", return_value="Input devices")
-    def test_main_does_not_reset_current_default(self, _choose, choose_device, set_default):
+    @patch("audio_menu.wofi_anchor.cursor_anchor", return_value=None)
+    def test_main_does_not_reset_current_default(
+        self, _cursor_anchor, _choose, choose_device, set_default
+    ):
         choose_device.return_value = audio_menu.AudioDevice(59, "Webcam", True)
 
         self.assertEqual(audio_menu.main(), 0)
-        choose_device.assert_called_once_with("Sources")
+        choose_device.assert_called_once_with("Sources", None)
         set_default.assert_not_called()
 
     @patch("audio_menu.open_audio_controls")
     @patch("audio_menu.choose", return_value="Open audio controls")
-    def test_main_opens_audio_controls(self, _choose, open_audio_controls):
+    @patch("audio_menu.wofi_anchor.cursor_anchor", return_value=None)
+    def test_main_opens_audio_controls(self, _cursor_anchor, _choose, open_audio_controls):
         self.assertEqual(audio_menu.main(), 0)
         open_audio_controls.assert_called_once_with()
 
     @patch("audio_menu.choose", return_value="")
-    def test_main_treats_cancellation_as_success(self, _choose):
+    @patch("audio_menu.wofi_anchor.cursor_anchor", return_value=None)
+    def test_main_treats_cancellation_as_success(self, _cursor_anchor, _choose):
         self.assertEqual(audio_menu.main(), 0)
 
     @patch("audio_menu.notify_error")
     @patch("audio_menu.choose", side_effect=audio_menu.AudioMenuError("broken"))
-    def test_main_reports_user_facing_errors(self, _choose, notify_error):
+    @patch("audio_menu.wofi_anchor.cursor_anchor", return_value=None)
+    def test_main_reports_user_facing_errors(self, _cursor_anchor, _choose, notify_error):
         self.assertEqual(audio_menu.main(), 1)
         notify_error.assert_called_once_with("broken")
 
