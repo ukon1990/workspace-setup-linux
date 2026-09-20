@@ -2,6 +2,5 @@
 hypr
 waybar
 lxqt
-sherlock
 themes
 cursor

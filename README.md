@@ -13,7 +13,7 @@ This repo is meant to be **public-safe**:
 - Neovim config (shared Linux + macOS)
 - shell config (fish / zsh)
 - gh config
-- sherlock / lxqt session config (Linux)
+- wofi / lxqt session config (Linux)
 - package lists for reinstalling apps on a fresh system
 - vendor app installer for downloaded tar.gz/AppImage files (Linux)
 - shell tool installer for nvm, Node 25, npm globals, SDKMAN, Java 25.0.2-amzn, rbenv, and Ruby
@@ -30,7 +30,7 @@ This repo is meant to be **public-safe**:
 
 ## Stow packages by OS
 - **Shared** (`packages/stow-shared.txt`): `nvim`, `fish`, `zsh`, `gh`, `scripts`
-- **Linux only** (`packages/stow-linux.txt`): `hypr`, `waybar`, `lxqt`, `sherlock`, `themes`, `cursor`
+- **Linux only** (`packages/stow-linux.txt`): `hypr`, `waybar`, `lxqt`, `themes`, `cursor`
 
 ## Fresh install flow
 1. Install base OS (Arch/CachyOS/… or macOS)

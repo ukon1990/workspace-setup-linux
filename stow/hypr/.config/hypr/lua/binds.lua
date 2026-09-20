@@ -5,7 +5,7 @@ local bind = require("lua.hotkeys").bind
 
 local terminal = "kitty"
 local fileManager = "dolphin"
-local menu = "sherlock"
+local menu = hypr .. "/scripts/app-launcher.sh"
 
 local hotkey_menu = hypr .. "/scripts/hotkey-menu.sh"
 local lock_session = hypr .. "/scripts/lock-session.sh"
