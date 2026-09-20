@@ -16,6 +16,7 @@ grim
 slurp
 swappy
 wofi
+jq
 otf-font-awesome
 playerctl
 pavucontrol
