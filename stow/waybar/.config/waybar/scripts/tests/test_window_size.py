@@ -19,6 +19,7 @@ class WindowSizeTests(unittest.TestCase):
         }
         self.monitor = {
             "id": 7,
+            "name": "DP-2",
             "x": 2560,
             "y": -200,
             "width": 1920,
@@ -65,47 +66,20 @@ class WindowSizeTests(unittest.TestCase):
 
     def test_overlay_menu_is_centered_and_clamped_to_work_area(self):
         command = window_size.menu_command("overlay", self.window, self.monitor)
-        self.assertIn("--global-coords", command)
-        self.assertEqual(command[command.index("--xoffset") + 1], "3440")
-        self.assertEqual(command[command.index("--yoffset") + 1], "140")
+        self.assertNotIn("--global-coords", command)
+        self.assertEqual(command[command.index("--monitor") + 1], "DP-2")
+        self.assertEqual(command[command.index("--xoffset") + 1], "880")
+        self.assertEqual(command[command.index("--yoffset") + 1], "340")
         self.assertEqual(command[command.index("--height") + 1], "520")
+        self.assertEqual(command[command.index("--define") + 1], "close_on_focus_loss=true")
 
-    @patch("window_size.run_json")
-    def test_cursor_position_parses_hyprctl_output(self, run_json):
-        run_json.return_value = {"x": 100, "y": 200}
-        self.assertEqual(window_size.cursor_position(), (100, 200))
-        run_json.assert_called_once_with(["hyprctl", "-j", "cursorpos"])
-
-    @patch("window_size.run_json")
-    def test_cursor_position_rejects_invalid_output(self, run_json):
-        run_json.return_value = {"x": "nan"}
-        with self.assertRaisesRegex(window_size.WindowSizeError, "invalid cursor position"):
-            window_size.cursor_position()
-
-    def test_monitor_at_finds_containing_monitor(self):
-        other = {**self.monitor, "id": 2, "x": 0, "y": 0, "width": 1920, "height": 1080}
-        found = window_size.monitor_at([other, self.monitor], 3000, 0, other)
-        self.assertEqual(found["id"], 7)
-
-    def test_monitor_at_falls_back_to_default_outside_all_monitors(self):
-        found = window_size.monitor_at([self.monitor], 999999, 999999, self.monitor)
-        self.assertEqual(found, self.monitor)
-
-    @patch("window_size.run_json")
-    def test_menu_is_anchored_below_cursor(self, run_json):
-        run_json.side_effect = [{"x": 3500, "y": 50}, [self.monitor]]
+    @patch("window_size.wofi_anchor.wofi_menu_args")
+    def test_menu_delegates_anchoring_to_shared_wofi_anchor_helper(self, wofi_menu_args):
+        wofi_menu_args.return_value = ["--normal-window", "--define", "close_on_focus_loss=true"]
         command = window_size.menu_command("menu", self.window, self.monitor)
-        self.assertIn("--global-coords", command)
-        self.assertEqual(command[command.index("--xoffset") + 1], "3340")
-        self.assertEqual(command[command.index("--yoffset") + 1], "62")
-        self.assertEqual(command[command.index("--height") + 1], "520")
+        wofi_menu_args.assert_called_once_with(window_size.MENU_WIDTH, window_size.MENU_HEIGHT)
+        self.assertEqual(command[-3:], ["--normal-window", "--define", "close_on_focus_loss=true"])
 
-    @patch("window_size.run_json")
-    def test_menu_is_clamped_near_monitor_edges(self, run_json):
-        run_json.side_effect = [{"x": 4400, "y": 800}, [self.monitor]]
-        command = window_size.menu_command("menu", self.window, self.monitor)
-        self.assertEqual(command[command.index("--xoffset") + 1], "4140")
-        self.assertEqual(command[command.index("--yoffset") + 1], "330")
 
     @patch("window_size.run_json")
     def test_active_window_matches_monitor_id(self, run_json):
@@ -238,19 +212,15 @@ class WindowSizeTests(unittest.TestCase):
             )
 
     @patch("window_size.shutil.which", return_value="/usr/bin/wofi")
-    @patch("window_size.run_json")
-    @patch("window_size.run")
-    def test_menu_cancellation_is_noop(self, run, run_json, _which):
-        run_json.side_effect = [{"x": 3500, "y": 50}, [self.monitor]]
-        run.return_value = subprocess.CompletedProcess([], 1, "", "")
+    @patch("window_size.wofi_anchor.wofi_menu_args", return_value=["--location", "top_left"])
+    @patch("window_size.wofi_anchor.run_wofi_menu", return_value="")
+    def test_menu_cancellation_is_noop(self, _run_wofi_menu, _wofi_menu_args, _which):
         self.assertIsNone(window_size.choose_option("menu", self.window, self.monitor))
 
     @patch("window_size.shutil.which", return_value="/usr/bin/wofi")
-    @patch("window_size.run_json")
-    @patch("window_size.run")
-    def test_menu_maps_selection(self, run, run_json, _which):
-        run_json.side_effect = [{"x": 3500, "y": 50}, [self.monitor]]
-        run.return_value = subprocess.CompletedProcess([], 0, "Float · 2/3\n", "")
+    @patch("window_size.wofi_anchor.wofi_menu_args", return_value=["--location", "top_left"])
+    @patch("window_size.wofi_anchor.run_wofi_menu", return_value="Float · 2/3")
+    def test_menu_maps_selection(self, _run_wofi_menu, _wofi_menu_args, _which):
         selected = window_size.choose_option("menu", self.window, self.monitor)
         self.assertEqual(selected.fraction, Fraction(2, 3))
         self.assertTrue(selected.floating)

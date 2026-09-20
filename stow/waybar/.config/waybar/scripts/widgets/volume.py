@@ -62,6 +62,6 @@ def volume_module(state):
     bar = volume_bar(volume)
     return {
         "text": f"{icon}  {volume:.0f}%" if compact else f"{icon} {volume:3.0f}% {bar}",
-        "tooltip": f"{description}\nVolume: {volume:.0f}%\nLeft click: open mixer\nRight click: mute\nScroll: adjust volume",
+        "tooltip": f"{description}\nVolume: {volume:.0f}%\nLeft click: select device or open mixer\nRight click: mute\nScroll: adjust volume",
         "class": classes(*state_class.split(), "compact" if compact else None),
     }

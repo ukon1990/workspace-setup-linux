@@ -16,6 +16,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+sys.path.insert(0, str(Path.home() / "scripts"))
+import wofi_anchor  # noqa: E402
+
 CONFIG_DIR = Path.home() / ".config"
 THEME_DIR = CONFIG_DIR / "themes"
 PALETTE_DIR = THEME_DIR / "palettes"
@@ -558,29 +561,27 @@ def cmd_widget(_: argparse.Namespace) -> int:
     return 0
 
 
+PICKER_WIDTH = 260
+PICKER_HEIGHT = 320
+
+
 def _find_picker() -> list[str] | None:
-    """Return a dmenu-style command positioned like a dropdown near the top-right."""
+    """Return a dmenu-style command positioned like a dropdown near the click."""
     for cmd in ("wofi", "fuzzel", "rofi", "bemenu"):
         if shutil.which(cmd):
             if cmd == "wofi":
-                return [
+                command = [
                     "wofi",
                     "--dmenu",
                     "--prompt",
                     "Theme",
-                    "--location",
-                    "top_right",
-                    "--xoffset",
-                    "-12",
-                    "--yoffset",
-                    "52",
                     "--width",
-                    "260",
-                    "--height",
-                    "320",
+                    str(PICKER_WIDTH),
                     "--lines",
                     "8",
                 ]
+                command.extend(wofi_anchor.wofi_menu_args(PICKER_WIDTH, PICKER_HEIGHT))
+                return command
             if cmd == "fuzzel":
                 return [
                     "fuzzel",
@@ -619,10 +620,15 @@ def cmd_picker(args: argparse.Namespace) -> int:
         # Fallback: just cycle forward
         return cmd_cycle(argparse.Namespace(backward=False, quiet=args.quiet))
     try:
-        proc = subprocess.run(picker, input=stdin_text, capture_output=True, text=True, check=False)
+        if picker[0] == "wofi":
+            choice = wofi_anchor.run_wofi_menu(picker, input_text=stdin_text)
+        else:
+            proc = subprocess.run(
+                picker, input=stdin_text, capture_output=True, text=True, check=False
+            )
+            choice = proc.stdout.strip()
     except FileNotFoundError:
         return cmd_cycle(argparse.Namespace(backward=False, quiet=args.quiet))
-    choice = proc.stdout.strip()
     if not choice:
         return 0
     # accept either "Display Name\tinternal" or plain display name or plain internal

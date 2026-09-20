@@ -9,7 +9,11 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from fractions import Fraction
+from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path.home() / "scripts"))
+import wofi_anchor  # noqa: E402
 
 FRACTION_CHOICES = (
     ("1/4", Fraction(1, 4)),
@@ -21,7 +25,6 @@ FRACTION_CHOICES = (
 )
 MENU_WIDTH = 320
 MENU_HEIGHT = 520
-CURSOR_MENU_GAP = 12  # px gap below the cursor when opening from a click
 
 
 class WindowSizeError(RuntimeError):
@@ -136,37 +139,6 @@ def calculate_floating_geometry(
     return Geometry(x=x, y=y, width=width, height=area.height)
 
 
-def cursor_position() -> tuple[int, int]:
-    position = run_json(["hyprctl", "-j", "cursorpos"])
-    try:
-        return int(position["x"]), int(position["y"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise WindowSizeError("Hyprland returned an invalid cursor position") from exc
-
-
-def monitor_at(monitors: list[Any], x: int, y: int, default: dict[str, Any]) -> dict[str, Any]:
-    """Return the monitor containing point (x, y), falling back to `default`."""
-    for candidate in monitors:
-        try:
-            monitor_x = int(candidate["x"])
-            monitor_y = int(candidate["y"])
-            monitor_width = int(candidate["width"])
-            monitor_height = int(candidate["height"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if monitor_x <= x < monitor_x + monitor_width and monitor_y <= y < monitor_y + monitor_height:
-            return candidate
-    return default
-
-
-def clamp_to_area(x: int, y: int, width: int, height: int, area: Geometry) -> tuple[int, int, int]:
-    """Clamp a menu's top-left position (and height) to fit within `area`."""
-    height = min(height, area.height)
-    x = min(max(x, area.x), area.x + area.width - width)
-    y = min(max(y, area.y), area.y + area.height - height)
-    return x, y, height
-
-
 def menu_command(mode: str, window: dict[str, Any], monitor: dict[str, Any]) -> list[str]:
     command = [
         "wofi",
@@ -190,41 +162,42 @@ def menu_command(mode: str, window: dict[str, Any], monitor: dict[str, Any]) -> 
         area = work_area(monitor)
         x = window_x + (window_width - MENU_WIDTH) // 2
         y = window_y + (window_height - MENU_HEIGHT) // 2
-        x, y, height = clamp_to_area(x, y, MENU_WIDTH, MENU_HEIGHT, area)
+        x, y, height = wofi_anchor.clamp_to_area(
+            x, y, MENU_WIDTH, MENU_HEIGHT, area.x, area.y, area.width, area.height
+        )
+        try:
+            monitor_name = str(monitor["name"])
+            monitor_x, monitor_y = int(monitor["x"]), int(monitor["y"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WindowSizeError("Hyprland returned incomplete monitor geometry") from exc
+        command.extend(
+            [
+                "--monitor",
+                monitor_name,
+                "--location",
+                "top_left",
+                "--xoffset",
+                str(x - monitor_x),
+                "--yoffset",
+                str(y - monitor_y),
+                "--height",
+                str(height),
+                "--define",
+                "close_on_focus_loss=true",
+            ]
+        )
     else:
-        cursor_x, cursor_y = cursor_position()
-        monitors = run_json(["hyprctl", "-j", "monitors"])
-        if not isinstance(monitors, list):
-            raise WindowSizeError("Hyprland returned an invalid monitor list")
-        cursor_monitor = monitor_at(monitors, cursor_x, cursor_y, monitor)
-        area = work_area(cursor_monitor)
-        x = cursor_x - MENU_WIDTH // 2
-        y = cursor_y + CURSOR_MENU_GAP
-        x, y, height = clamp_to_area(x, y, MENU_WIDTH, MENU_HEIGHT, area)
-    command.extend(
-        [
-            "--location",
-            "top_left",
-            "--global-coords",
-            "--xoffset",
-            str(x),
-            "--yoffset",
-            str(y),
-            "--height",
-            str(height),
-        ]
-    )
+        command.extend(wofi_anchor.wofi_menu_args(MENU_WIDTH, MENU_HEIGHT))
     return command
 
 
 def choose_option(mode: str, window: dict[str, Any], monitor: dict[str, Any]) -> SizeOption | None:
     if not shutil.which("wofi"):
         raise WindowSizeError("wofi is not installed")
-    result = run(
+    choice = wofi_anchor.run_wofi_menu(
         menu_command(mode, window, monitor),
         input_text="\n".join(option.label for option in OPTIONS),
     )
-    choice = result.stdout.strip()
     if not choice:
         return None
     try:

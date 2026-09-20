@@ -77,6 +77,19 @@ class ThemeTests(unittest.TestCase):
             self.assertIn("#663300", style)
             self.assertEqual(paths["STATE_FILE"].read_text(), "test-dark\n")
 
+    def test_find_picker_delegates_wofi_anchoring_to_shared_helper(self):
+        with (
+            patch.object(theme.shutil, "which", side_effect=lambda c: c == "wofi" and "/usr/bin/wofi"),
+            patch.object(
+                theme.wofi_anchor,
+                "wofi_menu_args",
+                return_value=["--normal-window", "--define", "close_on_focus_loss=true"],
+            ) as wofi_menu_args,
+        ):
+            command = theme._find_picker()
+        wofi_menu_args.assert_called_once_with(theme.PICKER_WIDTH, theme.PICKER_HEIGHT)
+        self.assertEqual(command[-3:], ["--normal-window", "--define", "close_on_focus_loss=true"])
+
 
 if __name__ == "__main__":
     unittest.main()
