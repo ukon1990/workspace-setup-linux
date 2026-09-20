@@ -39,7 +39,7 @@ tooltip {
 #custom-hyprsunset,
 #idle_inhibitor,
 #tray {
-    background: alpha(@surface, 0.5);
+    background: @surface;
     border: 1px solid @outline-soft;
     border-radius: 18px;
     box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
@@ -131,7 +131,7 @@ tooltip {
 }
 
 #custom-kubernetes.warning {
-    color: @on-primary;
+    color: @on-accent;
     background: @accent-container;
     border-color: @outline-strong;
 }

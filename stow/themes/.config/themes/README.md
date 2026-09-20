@@ -21,7 +21,7 @@ swaps colors across all three.
 │   ├── set-theme               # convenience wrapper: `theme set ...`
 │   └── theme-from-wallpaper    # optional: generate a palette from an image
 └── state/
-    └── current                 # last applied theme name (auto-managed)
+    └── preferences.json        # local theme and wallpaper preferences
 ```
 
 Generated files (rewritten every time a theme is applied):
@@ -35,6 +35,8 @@ Generated files (rewritten every time a theme is applied):
   annotation tool (bound to Print Screen, see `stow/hypr/.config/hypr/scripts/screenshot.sh`)
   matches your theme. Swappy's own panel chrome (GTK3) still follows the
   system dark/light preference set below, not the full palette.
+- `~/.config/hypr/hyprpaper.conf` — local wallpaper configuration generated
+  from `state/preferences.json`.
 
 Do **not** hand-edit the generated files — they will be overwritten on the
 next theme switch. Change palette JSON or the generator in `bin/theme`
@@ -58,6 +60,7 @@ theme cycle                   # next theme
 theme cycle --backward        # previous theme
 theme picker                  # open wofi/fuzzel/rofi/bemenu picker
 theme apply                   # regenerate files for the current theme
+theme wallpaper picker        # choose a local wallpaper and its target
 ```
 
 If the binary directory isn't on `PATH`, call it with the full path:
@@ -134,7 +137,7 @@ Applies a named theme:
 
 1. Renders `hypr/theme.lua`, `waybar/colors.css`, and `mako/config`
    from the palette.
-2. Writes the new theme name to `state/current`.
+2. Writes the new theme name to local `state/preferences.json`.
 3. Reloads Hyprland (`hyprctl reload`), Waybar (`pkill -SIGUSR2
    waybar`), and Mako (`makoctl reload`).
 4. Updates the system color-scheme preference via `gsettings` so GTK,
@@ -241,9 +244,28 @@ theme set my-theme
 | `primary_container` | Filled accent background (active workspace, active idle inhibitor). |
 | `on_primary` | Readable text on top of `primary_container`. |
 | `accent_container` | Attention accent (Waybar tray needs-attention, Mako alt). |
+| `on_accent` | Readable text on top of `accent_container`. |
 | `hypr_active_border` / `hypr_inactive_border` | Hyprland window borders. |
 | `shadow` | Hyprland window shadow color. |
 | `groupbar_*` | Hyprland groupbar colors (tabs-within-windows UI). |
+
+Palette colors are checked when loaded. Text pairs must meet WCAG AA's 4.5:1
+contrast requirement; borders and other non-text indicators must meet 3:1.
+The Waybar panel is deliberately opaque so those guarantees do not change
+with the current wallpaper.
+
+## Wallpapers
+
+Wallpapers are a local preference, separate from themes. Put PNG, JPG, WEBP,
+AVIF, or BMP images in `~/Pictures/Wallpapers`, then select **Set
+wallpaper...** from the Waybar theme menu or press `Super+Shift+W`. The
+picker first asks whether to apply the image to every monitor or to save an
+override for one connected monitor.
+
+Selections are stored in ignored `state/preferences.json` as a
+`currentTheme` plus a default wallpaper and optional monitor overrides. They
+are applied at login by Hyprpaper; changing themes does not change the
+wallpaper.
 
 ## Wallpaper-derived theme (optional)
 
@@ -345,3 +367,9 @@ visual theme still switches normally.
 **Reverting an edit to a generated file**
 Just run `theme apply` — it overwrites the generated files from the
 active palette.
+
+## Local active-theme state
+
+`state/preferences.json` is intentionally ignored by Git. On a fresh
+checkout the first theme command creates it with the default `amber-dark`
+value; switching themes and wallpaper choices remain local preferences.

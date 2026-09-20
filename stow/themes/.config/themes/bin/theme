@@ -23,7 +23,9 @@ CONFIG_DIR = Path.home() / ".config"
 THEME_DIR = CONFIG_DIR / "themes"
 PALETTE_DIR = THEME_DIR / "palettes"
 STATE_DIR = THEME_DIR / "state"
-STATE_FILE = STATE_DIR / "current"
+PREFERENCES_FILE = STATE_DIR / "preferences.json"
+LEGACY_STATE_FILE = STATE_DIR / "current"
+WALLPAPER_DIR = Path.home() / "Pictures" / "Wallpapers"
 
 HYPR_THEME_FILE = CONFIG_DIR / "hypr" / "theme.lua"
 HYPRLOCK_COLORS_FILE = CONFIG_DIR / "hypr" / "hyprlock-colors.conf"
@@ -31,9 +33,33 @@ WAYBAR_COLORS_FILE = CONFIG_DIR / "waybar" / "colors.css"
 WOFI_STYLE_FILE = CONFIG_DIR / "wofi" / "style.css"
 MAKO_CONFIG_FILE = CONFIG_DIR / "mako" / "config"
 SWAPPY_CONFIG_FILE = CONFIG_DIR / "swappy" / "config"
+HYPRPAPER_CONFIG_FILE = CONFIG_DIR / "hypr" / "hyprpaper.conf"
 SCREENSHOTS_DIR = "$HOME/Pictures/Screenshots"
 
 DEFAULT_THEME = "amber-dark"
+REQUIRED_COLORS = {
+    "bg",
+    "surface",
+    "surface_high",
+    "surface_higher",
+    "outline",
+    "text",
+    "text_muted",
+    "primary",
+    "primary_container",
+    "on_primary",
+    "accent_container",
+    "on_accent",
+    "hypr_active_border",
+    "hypr_inactive_border",
+    "shadow",
+    "groupbar_active",
+    "groupbar_inactive",
+    "groupbar_locked_active",
+    "groupbar_locked_inactive",
+    "groupbar_text_active",
+    "groupbar_text_inactive",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +72,28 @@ def hex_to_rgb(color: str) -> tuple[int, int, int]:
     if len(color) != 6:
         raise ValueError(f"Expected 6 digit hex color, got {color!r}")
     return int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
+
+
+def relative_luminance(color: str) -> float:
+    """Return the WCAG relative luminance of a hex color."""
+    channels = []
+    for channel in hex_to_rgb(color):
+        value = channel / 255
+        channels.append(value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def contrast_ratio(foreground: str, background: str) -> float:
+    darker, lighter = sorted((relative_luminance(foreground), relative_luminance(background)))
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def composite(foreground: str, background: str, alpha: float) -> str:
+    """Composite a hex foreground over an opaque hex background."""
+    fg = hex_to_rgb(foreground)
+    bg = hex_to_rgb(background)
+    channels = [round(channel * alpha + bg[index] * (1 - alpha)) for index, channel in enumerate(fg)]
+    return f"#{channels[0]:02x}{channels[1]:02x}{channels[2]:02x}"
 
 
 def rgba_css(color: str, alpha: float) -> str:
@@ -102,13 +150,27 @@ def load_palette(name: str) -> Palette:
     if not path.exists():
         raise SystemExit(f"Theme not found: {name} ({path})")
     data = json.loads(path.read_text())
-    return Palette(
+    colors = data["colors"]
+    missing = REQUIRED_COLORS - colors.keys()
+    if missing:
+        raise ValueError(f"{path.name}: missing color tokens: {', '.join(sorted(missing))}")
+    for token, color in colors.items():
+        try:
+            hex_to_rgb(color)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{path.name}: invalid {token} color {color!r}") from exc
+    mode = data.get("mode", "dark")
+    if mode not in {"dark", "light"}:
+        raise ValueError(f"{path.name}: mode must be 'dark' or 'light'")
+    palette = Palette(
         name=data["name"],
         display_name=data.get("display_name", data["name"]),
-        mode=data.get("mode", "dark"),
+        mode=mode,
         icon=data.get("icon", ""),
-        colors=data["colors"],
+        colors=colors,
     )
+    validate_palette(palette)
+    return palette
 
 
 def list_palettes() -> list[Palette]:
@@ -121,18 +183,71 @@ def list_palettes() -> list[Palette]:
     return palettes
 
 
+def load_preferences() -> dict[str, object]:
+    if PREFERENCES_FILE.exists():
+        try:
+            preferences = json.loads(PREFERENCES_FILE.read_text())
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"Invalid theme preferences: {PREFERENCES_FILE}") from exc
+        if not isinstance(preferences, dict):
+            raise SystemExit(f"Invalid theme preferences: {PREFERENCES_FILE}")
+    else:
+        legacy_theme = LEGACY_STATE_FILE.read_text().strip() if LEGACY_STATE_FILE.exists() else ""
+        preferences = {"currentTheme": legacy_theme or DEFAULT_THEME, "wallpapers": {}}
+        save_preferences(preferences)
+    preferences.setdefault("currentTheme", DEFAULT_THEME)
+    preferences.setdefault("wallpapers", {})
+    wallpapers = preferences["wallpapers"]
+    if (
+        not isinstance(preferences["currentTheme"], str)
+        or not isinstance(wallpapers, dict)
+        or not all(isinstance(monitor, str) and isinstance(path, str) for monitor, path in wallpapers.items())
+    ):
+        raise SystemExit(f"Invalid theme preferences: {PREFERENCES_FILE}")
+    return preferences
+
+
+def save_preferences(preferences: dict[str, object]) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    write_file(PREFERENCES_FILE, json.dumps(preferences, indent=2) + "\n")
+
+
 def current_theme_name() -> str:
-    if STATE_FILE.exists():
-        name = STATE_FILE.read_text().strip()
-        if name and palette_path(name).exists():
-            return name
+    name = load_preferences()["currentTheme"]
+    if isinstance(name, str) and palette_path(name).exists():
+        return name
     save_current_theme(DEFAULT_THEME)
     return DEFAULT_THEME
 
 
 def save_current_theme(name: str) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(name + "\n")
+    preferences = load_preferences()
+    preferences["currentTheme"] = name
+    save_preferences(preferences)
+
+
+def validate_palette(palette: Palette) -> None:
+    """Reject token combinations that fail their WCAG AA use case."""
+    c = palette.colors
+    pairs = (
+        ("text on surface", c["text"], c["surface"], 4.5),
+        ("text on surface_high", c["text"], c["surface_high"], 4.5),
+        ("text on background", c["text"], c["bg"], 4.5),
+        ("muted text on surface", c["text_muted"], c["surface"], 4.5),
+        ("on_primary on primary_container", c["on_primary"], c["primary_container"], 4.5),
+        ("on_accent on accent_container", c["on_accent"], c["accent_container"], 4.5),
+        ("active groupbar text", c["groupbar_text_active"], c["groupbar_active"], 4.5),
+        ("inactive groupbar text", c["groupbar_text_inactive"], c["groupbar_inactive"], 4.5),
+        ("primary indicator on surface", c["primary"], c["surface"], 3.0),
+        ("outline on surface", c["outline"], c["surface"], 3.0),
+    )
+    failures = [
+        f"{label} {ratio:.2f}:1 (requires {minimum:.1f}:1)"
+        for label, foreground, background, minimum in pairs
+        if (ratio := contrast_ratio(foreground, background)) < minimum
+    ]
+    if failures:
+        raise ValueError(f"{palette.name}: WCAG AA validation failed: {'; '.join(failures)}")
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +348,7 @@ def render_waybar(palette: Palette) -> str:
     define("primary-border-strong", rgba_css(c["primary"], 0.72))
     define("on-primary", c["on_primary"])
     define("accent-container", rgba_css(c["accent_container"], 0.92))
+    define("on-accent", c["on_accent"])
     return "".join(lines)
 
 
@@ -396,6 +512,36 @@ custom_color={swappy_rgba(c["primary"], 1.0)}
 """
 
 
+def wallpaper_targets() -> dict[str, Path]:
+    """Return local wallpaper preferences as Hyprpaper monitor targets."""
+    wallpapers = load_preferences()["wallpapers"]
+    if not isinstance(wallpapers, dict):
+        raise SystemExit(f"Invalid theme preferences: {PREFERENCES_FILE}")
+    targets = {
+        "" if monitor == "default" else monitor: path
+        for monitor, path in wallpapers.items()
+        if isinstance(monitor, str) and isinstance(path, str)
+    }
+    resolved = {monitor: Path(path).expanduser().resolve() for monitor, path in targets.items()}
+    missing = [str(path) for path in resolved.values() if not path.is_file()]
+    if missing:
+        raise SystemExit(f"wallpaper file not found: {missing[0]}")
+    return resolved
+
+
+def render_hyprpaper(targets: dict[str, Path]) -> str:
+    paths = sorted({str(path) for path in targets.values()})
+    lines = [
+        "# AUTOGENERATED BY theme manager (~/.config/themes/bin/theme).\n",
+        "# Do not edit by hand. Run `theme set <name>` to change themes.\n",
+        "splash = false\n\n",
+    ]
+    lines.extend(f"preload = {path}\n" for path in paths)
+    lines.append("\n")
+    lines.extend(f"wallpaper = {monitor},{path}\n" for monitor, path in targets.items())
+    return "".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Writer + reloader
 # ---------------------------------------------------------------------------
@@ -469,6 +615,60 @@ def apply_system_appearance(palette: Palette, quiet: bool = False) -> None:
             print(f"  system {name}: {status}{detail}")
 
 
+def apply_wallpapers(targets: dict[str, Path], quiet: bool = False) -> None:
+    if not targets:
+        return
+    if not shutil.which("hyprctl"):
+        if not quiet:
+            print("  wallpaper hyprpaper: skipped (hyprctl not installed)")
+        return
+    for path in sorted(set(targets.values())):
+        run(["hyprctl", "hyprpaper", "preload", str(path)])
+    results = [
+        run(["hyprctl", "hyprpaper", "wallpaper", f"{monitor},{path}"])
+        for monitor, path in targets.items()
+    ]
+    if not quiet:
+        failures = sum(not ok for ok, _ in results)
+        print(f"  wallpaper hyprpaper: {'ok' if not failures else f'FAIL ({failures} target(s))'}")
+
+
+def active_monitor_names() -> list[str]:
+    ok, output = run(["hyprctl", "monitors", "-j"])
+    if not ok:
+        return []
+    try:
+        monitors = json.loads(output)
+    except json.JSONDecodeError:
+        return []
+    return sorted(monitor["name"] for monitor in monitors if isinstance(monitor.get("name"), str))
+
+
+def wallpaper_images() -> list[Path]:
+    if not WALLPAPER_DIR.is_dir():
+        raise SystemExit(
+            f"Wallpaper folder not found: {WALLPAPER_DIR}\n"
+            f"Create it and add images, then run `theme wallpaper picker`."
+        )
+    extensions = {".avif", ".bmp", ".jpeg", ".jpg", ".png", ".webp"}
+    return sorted(path for path in WALLPAPER_DIR.rglob("*") if path.suffix.lower() in extensions)
+
+
+def set_wallpaper(monitor: str, image: Path, quiet: bool = False) -> None:
+    image = image.expanduser().resolve()
+    if not image.is_file():
+        raise SystemExit(f"Wallpaper file not found: {image}")
+    preferences = load_preferences()
+    wallpapers = preferences["wallpapers"]
+    if not isinstance(wallpapers, dict):
+        raise SystemExit(f"Invalid theme preferences: {PREFERENCES_FILE}")
+    wallpapers["default" if monitor == "" else monitor] = str(image)
+    save_preferences(preferences)
+    targets = wallpaper_targets()
+    write_file(HYPRPAPER_CONFIG_FILE, render_hyprpaper(targets))
+    apply_wallpapers(targets, quiet=quiet)
+
+
 # ---------------------------------------------------------------------------
 # Subcommands
 # ---------------------------------------------------------------------------
@@ -511,6 +711,17 @@ def cmd_list(_: argparse.Namespace) -> int:
 
 def cmd_current(_: argparse.Namespace) -> int:
     print(current_theme_name())
+    return 0
+
+
+def cmd_wallpaper_apply(args: argparse.Namespace) -> int:
+    targets = wallpaper_targets()
+    if not targets:
+        if not args.quiet:
+            print(f"No wallpaper configured. Add images to {WALLPAPER_DIR} and run `theme wallpaper picker`.")
+        return 0
+    write_file(HYPRPAPER_CONFIG_FILE, render_hyprpaper(targets))
+    apply_wallpapers(targets, quiet=args.quiet)
     return 0
 
 
@@ -565,7 +776,7 @@ PICKER_WIDTH = 260
 PICKER_HEIGHT = 320
 
 
-def _find_picker() -> list[str] | None:
+def _find_picker(prompt: str = "Theme") -> list[str] | None:
     """Return a dmenu-style command positioned like a dropdown near the click."""
     for cmd in ("wofi", "fuzzel", "rofi", "bemenu"):
         if shutil.which(cmd):
@@ -574,7 +785,7 @@ def _find_picker() -> list[str] | None:
                     "wofi",
                     "--dmenu",
                     "--prompt",
-                    "Theme",
+                    prompt,
                     "--width",
                     str(PICKER_WIDTH),
                     "--lines",
@@ -587,7 +798,7 @@ def _find_picker() -> list[str] | None:
                     "fuzzel",
                     "--dmenu",
                     "--prompt",
-                    "Theme: ",
+                    f"{prompt}: ",
                     "--anchor",
                     "top-right",
                     "--width",
@@ -600,12 +811,12 @@ def _find_picker() -> list[str] | None:
                     "rofi",
                     "-dmenu",
                     "-p",
-                    "Theme",
+                    prompt,
                     "-theme-str",
                     "window { location: northeast; anchor: northeast; x-offset: -12px; y-offset: 52px; width: 260px; }",
                 ]
             if cmd == "bemenu":
-                return ["bemenu", "-p", "Theme"]
+                return ["bemenu", "-p", prompt]
     return None
 
 
@@ -614,7 +825,7 @@ def cmd_picker(args: argparse.Namespace) -> int:
     if not palettes:
         raise SystemExit("No themes available")
     picker = _find_picker()
-    entries = [f"{p.display_name}\t{p.name}" for p in palettes]
+    entries = ["Set wallpaper...\t__wallpaper__", *[f"{p.display_name}\t{p.name}" for p in palettes]]
     stdin_text = "\n".join(entries)
     if not picker:
         # Fallback: just cycle forward
@@ -640,10 +851,45 @@ def cmd_picker(args: argparse.Namespace) -> int:
             if choice in (p.name, p.display_name):
                 name = p.name
                 break
+    if name == "__wallpaper__":
+        return cmd_wallpaper_picker(args)
     if not name:
         print(f"Unknown selection: {choice!r}", file=sys.stderr)
         return 1
     apply_theme(name, reload=True, quiet=args.quiet)
+    return 0
+
+
+def picker_choice(picker: list[str], entries: list[str]) -> str:
+    input_text = "\n".join(entries)
+    if picker[0] == "wofi":
+        return wofi_anchor.run_wofi_menu(picker, input_text=input_text)
+    proc = subprocess.run(picker, input=input_text, capture_output=True, text=True, check=False)
+    return proc.stdout.strip()
+
+
+def cmd_wallpaper_picker(args: argparse.Namespace) -> int:
+    picker = _find_picker("Wallpaper target")
+    if not picker:
+        raise SystemExit("Install wofi, fuzzel, rofi, or bemenu to select a wallpaper.")
+    targets = ["All monitors\t", *[f"{monitor}\t{monitor}" for monitor in active_monitor_names()]]
+    try:
+        target = picker_choice(picker, targets)
+    except FileNotFoundError as exc:
+        raise SystemExit("Wallpaper picker is not available.") from exc
+    if not target:
+        return 0
+    monitor = target.split("\t", 1)[1] if "\t" in target else ""
+
+    images = wallpaper_images()
+    if not images:
+        raise SystemExit(f"No images found in {WALLPAPER_DIR}. Add PNG, JPG, WEBP, AVIF, or BMP files.")
+    entries = [f"{image.relative_to(WALLPAPER_DIR)}\t{image}" for image in images]
+    choice = picker_choice(_find_picker("Wallpaper") or picker, entries)
+    if not choice:
+        return 0
+    image = choice.split("\t", 1)[1] if "\t" in choice else choice
+    set_wallpaper(monitor, Path(image), quiet=args.quiet)
     return 0
 
 
@@ -690,6 +936,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_apply.add_argument("--no-reload", action="store_true")
     p_apply.add_argument("-q", "--quiet", action="store_true")
     p_apply.set_defaults(func=cmd_apply)
+
+    p_wallpaper = sub.add_parser("wallpaper", help="Manage local wallpaper preferences")
+    wallpaper_sub = p_wallpaper.add_subparsers(dest="wallpaper_command", required=True)
+    p_wallpaper_picker = wallpaper_sub.add_parser("picker", help="Choose wallpaper and monitor")
+    p_wallpaper_picker.add_argument("-q", "--quiet", action="store_true")
+    p_wallpaper_picker.set_defaults(func=cmd_wallpaper_picker)
+    p_wallpaper_apply = wallpaper_sub.add_parser("apply", help="Apply saved wallpaper preferences")
+    p_wallpaper_apply.add_argument("-q", "--quiet", action="store_true")
+    p_wallpaper_apply.set_defaults(func=cmd_wallpaper_apply)
 
     return parser
 

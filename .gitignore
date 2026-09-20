@@ -22,10 +22,12 @@ private/
 **/*.tmp
 **/*.bak
 stow/themes/.config/themes/state/current
+stow/themes/.config/themes/state/preferences.json
 stow/hypr/.config/hypr/theme.conf
 stow/hypr/.config/hypr/theme.lua
 stow/hypr/.config/hypr/hyprland.conf
 stow/hypr/.config/hypr/hyprlock-colors.conf
+stow/hypr/.config/hypr/hyprpaper.conf
 stow/waybar/.config/waybar/colors.css
 stow/mako/.config/mako/config
 
@@ -36,5 +38,3 @@ Thumbs.db
 # gh secrets
 stow/gh/.config/gh/hosts.yml
 **/.config/gh/hosts.yml
-stow/themes/.config/themes/state/current
-stow/themes/.config/themes/state/current

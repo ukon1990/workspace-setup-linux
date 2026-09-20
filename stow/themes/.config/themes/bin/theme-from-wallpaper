@@ -53,11 +53,11 @@ def _to_hex(rgb: tuple[int, int, int]) -> str:
 def sample_dominant(image_path: Path) -> tuple[int, int, int]:
     try:
         from PIL import Image  # type: ignore
-    except ImportError:
+    except ImportError as exc:
         raise SystemExit(
             "Pillow (python-pillow) is required for the fallback wallpaper mode.\n"
             "Install `matugen` for better results, or `pip install pillow`."
-        )
+        ) from exc
 
     with Image.open(image_path) as img:
         img = img.convert("RGB")
@@ -148,6 +148,7 @@ def build_palette_from_color(base: tuple[int, int, int], name: str, wallpaper: s
             "primary_container": _to_hex(primary_container),
             "on_primary": _to_hex(on_primary),
             "accent_container": _to_hex(accent_container),
+            "on_accent": on_primary,
             "hypr_active_border": _to_hex(hypr_active),
             "hypr_inactive_border": _to_hex(hypr_inactive),
             "shadow": _to_hex(shadow),
@@ -212,6 +213,7 @@ def try_matugen(image_path: Path) -> dict | None:
             "primary_container": pick("primary_container"),
             "on_primary": pick("on_primary"),
             "accent_container": pick("tertiary_container", "secondary_container"),
+            "on_accent": pick("on_tertiary_container", "on_secondary_container", "on_primary"),
             "hypr_active_border": pick("primary"),
             "hypr_inactive_border": pick("outline"),
             "shadow": pick("shadow", "scrim", "background"),

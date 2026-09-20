@@ -12,6 +12,7 @@ local lock_session = hypr .. "/scripts/lock-session.sh"
 local switch_user = hypr .. "/scripts/switch-user.sh"
 local screenshot_menu = hypr .. "/scripts/screenshot-menu.sh"
 local window_size_menu = home .. "/.config/waybar/scripts/window_size.py overlay"
+local wallpaper_picker = home .. "/.config/themes/bin/theme wallpaper picker"
 
 bind(mainMod .. " + T", "Open terminal", hl.dsp.exec_cmd(terminal))
 bind(mainMod .. " + Q", "Close active window", hl.dsp.window.kill())
@@ -23,6 +24,7 @@ bind(
 bind(mainMod .. " + E", "Open file manager", hl.dsp.exec_cmd(fileManager))
 bind(mainMod .. " + V", "Toggle floating window", hl.dsp.window.float({ action = "toggle" }))
 bind(mainMod .. " + SHIFT + R", "Open window size menu", hl.dsp.exec_cmd(window_size_menu))
+bind(mainMod .. " + SHIFT + W", "Choose wallpaper", hl.dsp.exec_cmd(wallpaper_picker))
 bind(mainMod .. " + SPACE", "Open application launcher", hl.dsp.exec_cmd(menu))
 bind(mainMod .. " + H", "Show searchable hotkeys", hl.dsp.exec_cmd(hotkey_menu))
 bind(mainMod .. " + L", "Lock session", hl.dsp.exec_cmd(lock_session))

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -33,6 +34,7 @@ class ThemeTests(unittest.TestCase):
                 "primary_container": "#663300",
                 "on_primary": "#ffffff",
                 "accent_container": "#553300",
+                "on_accent": "#ffffff",
                 "hypr_active_border": "#ff8800",
                 "hypr_inactive_border": "#444444",
                 "shadow": "#000000",
@@ -63,8 +65,10 @@ class ThemeTests(unittest.TestCase):
                 "WOFI_STYLE_FILE": root / "wofi" / "style.css",
                 "MAKO_CONFIG_FILE": root / "mako" / "config",
                 "SWAPPY_CONFIG_FILE": root / "swappy" / "config",
+                "HYPRPAPER_CONFIG_FILE": root / "hypr" / "hyprpaper.conf",
                 "STATE_DIR": root / "themes" / "state",
-                "STATE_FILE": root / "themes" / "state" / "current",
+                "PREFERENCES_FILE": root / "themes" / "state" / "preferences.json",
+                "LEGACY_STATE_FILE": root / "themes" / "state" / "current",
             }
             with (
                 patch.multiple(theme, **paths),
@@ -75,7 +79,95 @@ class ThemeTests(unittest.TestCase):
             style = paths["WOFI_STYLE_FILE"].read_text()
             self.assertIn("#entry:selected", style)
             self.assertIn("#663300", style)
-            self.assertEqual(paths["STATE_FILE"].read_text(), "test-dark\n")
+            self.assertEqual(
+                json.loads(paths["PREFERENCES_FILE"].read_text()),
+                {"currentTheme": "test-dark", "wallpapers": {}},
+            )
+
+    def test_missing_state_initializes_default_theme(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory) / "state"
+            preferences_file = state_dir / "preferences.json"
+            with patch.multiple(
+                theme,
+                STATE_DIR=state_dir,
+                PREFERENCES_FILE=preferences_file,
+                LEGACY_STATE_FILE=state_dir / "current",
+            ):
+                self.assertEqual(theme.current_theme_name(), theme.DEFAULT_THEME)
+
+            self.assertEqual(
+                json.loads(preferences_file.read_text()),
+                {"currentTheme": theme.DEFAULT_THEME, "wallpapers": {}},
+            )
+
+    def test_wallpaper_targets_and_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            default = root / "wallpaper.jpg"
+            display = root / "display.jpg"
+            default.touch()
+            display.touch()
+            preferences = root / "preferences.json"
+            preferences.write_text(
+                json.dumps(
+                    {
+                        "currentTheme": "test-dark",
+                        "wallpapers": {"default": str(default), "DP-1": str(display)},
+                    }
+                )
+            )
+            with patch.object(theme, "PREFERENCES_FILE", preferences):
+                targets = theme.wallpaper_targets()
+
+            self.assertEqual(targets[""], default)
+            self.assertEqual(targets["DP-1"], display)
+            config = theme.render_hyprpaper(targets)
+            self.assertIn(f"preload = {default}", config)
+            self.assertIn(f"wallpaper = DP-1,{display}", config)
+
+    def test_wallpaper_targets_reject_missing_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            preferences = Path(directory) / "preferences.json"
+            preferences.write_text(
+                json.dumps({"currentTheme": "test-dark", "wallpapers": {"default": "/does/not/exist.jpg"}})
+            )
+            with (
+                patch.object(theme, "PREFERENCES_FILE", preferences),
+                self.assertRaisesRegex(SystemExit, "wallpaper file not found"),
+            ):
+                theme.wallpaper_targets()
+
+    def test_apply_wallpapers_uses_hyprpaper_ipc(self):
+        targets = {"": Path("/tmp/default.jpg"), "DP-1": Path("/tmp/display.jpg")}
+        with (
+            patch.object(theme.shutil, "which", return_value="/usr/bin/hyprctl"),
+            patch.object(theme, "run", return_value=(True, "")) as run,
+        ):
+            theme.apply_wallpapers(targets, quiet=True)
+
+        self.assertEqual(
+            run.call_args_list,
+            [
+                ((["hyprctl", "hyprpaper", "preload", "/tmp/default.jpg"],), {}),
+                ((["hyprctl", "hyprpaper", "preload", "/tmp/display.jpg"],), {}),
+                ((["hyprctl", "hyprpaper", "wallpaper", ",/tmp/default.jpg"],), {}),
+                ((["hyprctl", "hyprpaper", "wallpaper", "DP-1,/tmp/display.jpg"],), {}),
+            ],
+        )
+
+    def test_contrast_ratio_and_validation(self):
+        self.assertEqual(theme.contrast_ratio("#000000", "#ffffff"), 21)
+        self.assertEqual(theme.composite("#ffffff", "#000000", 0.5), "#808080")
+        invalid = theme.Palette(
+            **{
+                **self.palette.__dict__,
+                "colors": {**self.palette.colors, "text": "#222222", "surface": "#111111"},
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "text on surface"):
+            theme.validate_palette(invalid)
 
     def test_find_picker_delegates_wofi_anchoring_to_shared_helper(self):
         with (
