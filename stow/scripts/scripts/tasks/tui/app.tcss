@@ -39,6 +39,11 @@ Footer {
     background: #1a1d23;
 }
 
+#task-tree {
+    height: 1fr;
+    background: #1a1d23;
+}
+
 #task-table > .datatable--header {
     background: #2b313b;
     color: #e8eaed;
@@ -81,10 +86,10 @@ Footer {
 }
 
 #content-body {
-    height: 1fr;
+    height: auto;
 }
 
-#relations-list {
+#relations-tree {
     height: 1fr;
 }
 

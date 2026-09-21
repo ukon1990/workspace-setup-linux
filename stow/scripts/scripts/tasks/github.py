@@ -15,7 +15,7 @@ from .models import (
 from .process import ProcessError, ProcessErrorKind, run_json, run_text
 from .references import github_identity, parse_github_references
 
-_LIST_FIELDS = "number,title,state,stateReason,assignees,labels,url,issueType"
+_LIST_FIELDS = "number,title,state,stateReason,assignees,labels,url,issueType,parent"
 _DETAIL_FIELDS = (
     "number,title,state,stateReason,assignees,labels,url,body,comments,"
     "parent,subIssues,blockedBy,blocking,issueType"
@@ -103,24 +103,40 @@ class GithubBackend:
         self,
         search: Optional[str] = None,
         assignee_filter: AssigneeFilter = AssigneeFilter.ALL,
+        *,
+        updated_since: Optional[str] = None,
+        include_closed: bool = False,
     ) -> Tuple[TaskSummary, ...]:
-        """List bounded open issues, optionally using repository-scoped search."""
+        """List bounded issues, optionally delta-filtered by update time."""
         repository = self.resolve_repository()
         query = _join_search(self.search, search)
+        if updated_since:
+            query = _join_search(query, f"updated:>={updated_since}")
         if assignee_filter is AssigneeFilter.ME_OR_UNASSIGNED:
-            assigned = self._list_issues(repository, query, AssigneeFilter.ME)
-            unassigned = self._list_issues(repository, query, AssigneeFilter.UNASSIGNED)
+            assigned = self._list_issues(
+                repository, query, AssigneeFilter.ME, include_closed=include_closed
+            )
+            unassigned = self._list_issues(
+                repository,
+                query,
+                AssigneeFilter.UNASSIGNED,
+                include_closed=include_closed,
+            )
             merged = {}
             for issue in assigned + unassigned:
                 merged.setdefault(issue.identity.stable_id, issue)
             return tuple(merged.values())[: self.limit]
-        return self._list_issues(repository, query, assignee_filter)
+        return self._list_issues(
+            repository, query, assignee_filter, include_closed=include_closed
+        )
 
     def _list_issues(
         self,
         repository: str,
         query: Optional[str],
         assignee_filter: AssigneeFilter,
+        *,
+        include_closed: bool = False,
     ) -> Tuple[TaskSummary, ...]:
         if assignee_filter is AssigneeFilter.UNASSIGNED:
             query = _join_search(query, "no:assignee")
@@ -134,7 +150,7 @@ class GithubBackend:
             "--repo",
             repository,
             "--state",
-            "open",
+            "all" if include_closed else "open",
             "--limit",
             str(self.limit),
             "--json",
@@ -156,10 +172,18 @@ class GithubBackend:
         self,
         text: str,
         assignee_filter: AssigneeFilter = AssigneeFilter.ALL,
+        *,
+        updated_since: Optional[str] = None,
+        include_closed: bool = False,
     ) -> Tuple[TaskSummary, ...]:
         if not isinstance(text, str) or not text.strip():
             raise ValueError("GitHub search text must be non-empty")
-        return self.list_issues(text.strip(), assignee_filter)
+        return self.list_issues(
+            text.strip(),
+            assignee_filter,
+            updated_since=updated_since,
+            include_closed=include_closed,
+        )
 
     def get_issue(self, target: Union[str, int, BackendIdentity]) -> TaskDetail:
         """Fetch and normalize one issue without eagerly resolving its relations."""
@@ -204,6 +228,10 @@ def _normalize_summary(payload: Any, repository: str) -> TaskSummary:
     title = _string(issue.get("title"), "Untitled issue")
     url = _optional_string(issue.get("url"))
     identity = BackendIdentity.github(number, repository, url=url)
+    parent = None
+    raw_parent = issue.get("parent")
+    if raw_parent is not None:
+        parent = _related_identity(_mapping(raw_parent, "GitHub parent"), repository)
     return TaskSummary(
         identity=identity,
         title=title,
@@ -212,6 +240,7 @@ def _normalize_summary(payload: Any, repository: str) -> TaskSummary:
         assignees=_names(issue.get("assignees")),
         labels=_names(issue.get("labels")),
         url=url,
+        parent=parent,
     )
 
 

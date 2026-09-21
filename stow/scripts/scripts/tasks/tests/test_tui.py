@@ -15,13 +15,21 @@ from tasks.models import (
     TaskSummary,
 )
 from tasks.tui import (
+    HierarchyNode,
     ListState,
     TasksController,
     assignee_filter_for_key,
     assignee_filter_text,
+    build_forest_from_details,
+    build_forest_from_summaries,
+    build_relationship_hierarchy,
     clip,
+    compute_progress,
     detail_content_lines,
+    expand_hierarchy,
     filter_tasks,
+    is_done,
+    is_done_status,
     relationship_line,
     selected_task,
     set_filter,
@@ -31,10 +39,12 @@ from tasks.tui import (
 
 
 def summary(number, title="Task", **kwargs):
+    parent = kwargs.pop("parent", None)
     return TaskSummary(
         BackendIdentity.github(number, "owner/repo"),
         title,
         kwargs.pop("status", "OPEN"),
+        parent=parent,
         **kwargs,
     )
 
@@ -67,6 +77,7 @@ class FakeBackend:
         query=None,
         refresh=False,
         assignee_filter=AssigneeFilter.ALL,
+        **_kwargs,
     ):
         self.list_calls.append((query, refresh, assignee_filter))
         return self.tasks
@@ -132,9 +143,12 @@ class HelperTests(unittest.TestCase):
             "is blocked by",
             "Dependency",
         )
-        lines = detail_content_lines(detail(1), 30)
-        self.assertIn("Description", lines)
-        self.assertIn("Comments", lines)
+        lines = detail_content_lines(detail(1))
+        text = "\n".join(lines)
+        self.assertIn("## Description", lines)
+        self.assertIn("## Comments", lines)
+        self.assertIn("First paragraph\n\nSecond paragraph", text)
+        self.assertIn("### alice · 2026-01-02", lines)
         self.assertEqual(
             relationship_line(relation),
             "is blocked by: owner/repo#8 — Dependency",
@@ -147,6 +161,168 @@ class HelperTests(unittest.TestCase):
         identity = BackendIdentity.github(2, "owner/repo", url="https://example.test/2")
         self.assertEqual(task_url(None, identity), "https://example.test/2")
         self.assertIsNone(task_url(None, BackendIdentity.github(3, "owner/repo")))
+
+    def test_is_done_recognizes_github_and_jira_statuses(self):
+        for status in ("Closed", "Completed", "Not Planned", "Done", "Resolved", "Cancelled"):
+            with self.subTest(status=status):
+                self.assertTrue(is_done_status(status))
+                self.assertTrue(is_done(summary(1, status=status)))
+        for status in ("Open", "Reopened", "In Progress", "Ready"):
+            with self.subTest(status=status):
+                self.assertFalse(is_done_status(status))
+
+    def test_progress_rollup_is_leaf_weighted(self):
+        open_leaf = HierarchyNode(
+            BackendIdentity.github(1, "owner/repo"), "Open", "Open"
+        )
+        done_leaf = HierarchyNode(
+            BackendIdentity.github(2, "owner/repo"), "Done", "Closed"
+        )
+        half = HierarchyNode(
+            BackendIdentity.github(3, "owner/repo"),
+            "Half",
+            "Open",
+            children=[open_leaf, done_leaf],
+        )
+        full = HierarchyNode(
+            BackendIdentity.github(4, "owner/repo"), "Full", "Closed"
+        )
+        root = HierarchyNode(
+            BackendIdentity.github(5, "owner/repo"),
+            "Root",
+            "Open",
+            children=[half, full],
+        )
+        compute_progress(root)
+        self.assertEqual((half.done_leaves, half.total_leaves), (1, 2))
+        self.assertEqual((full.done_leaves, full.total_leaves), (1, 1))
+        self.assertEqual((root.done_leaves, root.total_leaves), (2, 3))
+        self.assertIn("[2/3 67%]", root.progress_label)
+
+    def test_forest_nests_parent_child_and_ignores_cycles(self):
+        parent = summary(10, "Parent", status="Open")
+        child = summary(11, "Child", status="Closed")
+        grandchild = summary(12, "Grand", status="Open")
+        details = {
+            parent.identity.stable_id: TaskDetail(
+                parent,
+                relationships=(
+                    TaskRelationship(
+                        RelationshipKind.CHILD, child.identity, "sub-issue", "Child"
+                    ),
+                ),
+            ),
+            child.identity.stable_id: TaskDetail(
+                child,
+                relationships=(
+                    TaskRelationship(
+                        RelationshipKind.PARENT, parent.identity, "parent", "Parent"
+                    ),
+                    TaskRelationship(
+                        RelationshipKind.CHILD,
+                        grandchild.identity,
+                        "sub-issue",
+                        "Grand",
+                    ),
+                ),
+            ),
+            grandchild.identity.stable_id: TaskDetail(
+                grandchild,
+                relationships=(
+                    TaskRelationship(
+                        RelationshipKind.PARENT, child.identity, "parent", "Child"
+                    ),
+                    # Cycle back to parent should be ignored once parent_of is set.
+                    TaskRelationship(
+                        RelationshipKind.CHILD, parent.identity, "sub-issue", "Parent"
+                    ),
+                ),
+            ),
+        }
+        forest = build_forest_from_details(details)
+        self.assertEqual(len(forest), 1)
+        root = forest[0]
+        self.assertEqual(root.identity.key, "10")
+        self.assertEqual(root.children[0].identity.key, "11")
+        self.assertEqual(root.children[0].children[0].identity.key, "12")
+        self.assertEqual((root.done_leaves, root.total_leaves), (0, 1))
+
+    def test_expand_hierarchy_and_relationship_tree(self):
+        parent = summary(20, "Parent", status="Open")
+        current = summary(21, "Current", status="Open")
+        child = summary(22, "Child", status="Closed")
+        blocked = BackendIdentity.github(23, "owner/repo")
+        details = {
+            parent.identity.stable_id: TaskDetail(
+                parent,
+                relationships=(
+                    TaskRelationship(
+                        RelationshipKind.CHILD, current.identity, "sub-issue"
+                    ),
+                ),
+            ),
+            current.identity.stable_id: TaskDetail(
+                current,
+                relationships=(
+                    TaskRelationship(
+                        RelationshipKind.PARENT, parent.identity, "parent"
+                    ),
+                    TaskRelationship(
+                        RelationshipKind.CHILD, child.identity, "sub-issue"
+                    ),
+                    TaskRelationship(
+                        RelationshipKind.BLOCKED_BY, blocked, "blocked by", "Blocker"
+                    ),
+                ),
+            ),
+            child.identity.stable_id: TaskDetail(
+                child,
+                relationships=(
+                    TaskRelationship(
+                        RelationshipKind.PARENT, current.identity, "parent"
+                    ),
+                ),
+            ),
+        }
+
+        class HierarchyBackend(FakeBackend):
+            def __init__(self, mapping):
+                super().__init__()
+                self.details = mapping
+                self.tasks = [current]
+
+            def get_task(self, identity, refresh=False):
+                self.detail_calls.append((identity.stable_id, refresh))
+                return self.details[identity.stable_id]
+
+        backend = HierarchyBackend(details)
+        controller = TasksController(backend)
+        forest = expand_hierarchy(controller, [current])
+        self.assertEqual(len(forest), 1)
+        self.assertEqual(forest[0].identity.key, "20")
+        self.assertEqual(forest[0].children[0].identity.key, "21")
+
+        hierarchy = build_relationship_hierarchy(
+            controller, details[current.identity.stable_id]
+        )
+        self.assertEqual(hierarchy.identity.key, "20")
+        current_node = hierarchy.children[0]
+        self.assertTrue(current_node.is_current)
+        child_keys = {node.identity.key for node in current_node.children}
+        self.assertIn("22", child_keys)
+        link = next(node for node in current_node.children if node.link_label)
+        self.assertEqual(link.link_label, "blocked by")
+        self.assertEqual((hierarchy.done_leaves, hierarchy.total_leaves), (1, 1))
+
+    def test_summary_forest_nests_by_parent(self):
+        parent = summary(30, "Parent", status="Open")
+        child = summary(31, "Child", status="Closed", parent=parent.identity)
+        open_leaf = summary(32, "Open", status="Open", parent=child.identity)
+        forest = build_forest_from_summaries([parent, child, open_leaf])
+        self.assertEqual(len(forest), 1)
+        self.assertEqual(forest[0].identity.key, "30")
+        self.assertEqual(forest[0].children[0].identity.key, "31")
+        self.assertEqual((forest[0].done_leaves, forest[0].total_leaves), (0, 1))
 
 
 class ControllerTests(unittest.TestCase):
@@ -224,6 +400,7 @@ class ControllerTests(unittest.TestCase):
                 query=None,
                 refresh=False,
                 assignee_filter=AssigneeFilter.ALL,
+                **_kwargs,
             ):
                 self.list_calls.append((query, refresh, assignee_filter))
                 raise RuntimeError("offline")
@@ -307,6 +484,7 @@ class ControllerTests(unittest.TestCase):
                 query=None,
                 refresh=False,
                 assignee_filter=AssigneeFilter.ALL,
+                **_kwargs,
             ):
                 raise RuntimeError("offline")
 

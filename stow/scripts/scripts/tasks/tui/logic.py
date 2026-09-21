@@ -3,11 +3,43 @@
 from __future__ import annotations
 
 import textwrap
+from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Protocol, Sequence
+from typing import Callable, Mapping, Optional, Protocol, Sequence
 
+from ..cache import (
+    CacheEntry,
+    format_github_since,
+    format_jira_since,
+    load_entry,
+    save_entry,
+    utc_now_iso,
+)
 from ..filters import AssigneeFilter
-from ..models import BackendIdentity, TaskDetail, TaskRelationship, TaskSummary
+from ..models import (
+    BackendIdentity,
+    RelationshipKind,
+    TaskDetail,
+    TaskRelationship,
+    TaskSummary,
+)
+
+_DONE_STATUSES = frozenset(
+    {
+        "closed",
+        "completed",
+        "not planned",
+        "done",
+        "resolved",
+        "cancelled",
+        "canceled",
+    }
+)
+
+DEFAULT_TREE_MAX_DEPTH = 8
+DEFAULT_TREE_MAX_NODES = 80
+DEFAULT_DETAIL_ANCESTORS = 8
+DEFAULT_DETAIL_DESCENDANT_DEPTH = 2
 
 
 class TaskBackend(Protocol):
@@ -21,6 +53,9 @@ class TaskBackend(Protocol):
         query: Optional[str] = None,
         refresh: bool = False,
         assignee_filter: AssigneeFilter = AssigneeFilter.ALL,
+        *,
+        updated_since: Optional[str] = None,
+        include_closed: bool = False,
     ) -> Sequence[TaskSummary]: ...
 
     def get_task(self, identity: BackendIdentity, refresh: bool = False) -> TaskDetail: ...
@@ -131,35 +166,351 @@ def selected_task(state: ListState) -> Optional[TaskSummary]:
     return tasks[state.index]
 
 
-def detail_content_lines(detail: TaskDetail, width: int) -> list[str]:
+def detail_content_lines(detail: TaskDetail) -> list[str]:
+    """Build a Markdown document for the detail pane (bodies left unwrapped)."""
     summary = detail.summary
     metadata = [
-        f"Status: {summary.status}",
-        f"Type: {summary.task_type or '-'}  Priority: {summary.priority or '-'}",
-        f"Assignees: {', '.join(summary.assignees) or '-'}",
-        f"Labels: {', '.join(summary.labels) or '-'}",
-        f"Components: {', '.join(summary.components) or '-'}",
+        f"**Status:** {summary.status}",
+        f"**Type:** {summary.task_type or '-'}  **Priority:** {summary.priority or '-'}",
+        f"**Assignees:** {', '.join(summary.assignees) or '-'}",
+        f"**Labels:** {', '.join(summary.labels) or '-'}",
+        f"**Components:** {', '.join(summary.components) or '-'}",
     ]
-    lines = metadata + ["", "Description"]
-    lines.extend(wrap_text(detail.description or "(no description)", width))
+    lines = metadata + ["", "## Description", "", detail.description or "(no description)"]
     if detail.comments:
-        lines.extend(("", "Comments"))
+        lines.extend(("", "## Comments"))
         for comment in detail.comments:
-            heading = comment.author
+            heading = f"### {comment.author}"
             if comment.created_at:
                 heading += f" · {comment.created_at}"
-            lines.extend((heading, *wrap_text(comment.body or "(empty comment)", width), ""))
+            lines.extend(("", heading, "", comment.body or "(empty comment)"))
     return lines
 
 
 def detail_content_text(detail: TaskDetail) -> str:
-    """Full detail body for a scrollable pane (no fixed wrap width)."""
-    return "\n".join(detail_content_lines(detail, width=100))
+    """Full detail body as Markdown for the scrollable detail pane."""
+    return "\n".join(detail_content_lines(detail))
 
 
 def relationship_line(relationship: TaskRelationship) -> str:
     suffix = f" — {relationship.summary}" if relationship.summary else ""
     return f"{relationship.label}: {relationship.target.display_key}{suffix}"
+
+
+def is_done_status(status: str) -> bool:
+    normalized = status.casefold().replace("_", " ").strip()
+    return normalized in _DONE_STATUSES
+
+
+def is_done(summary: TaskSummary) -> bool:
+    return is_done_status(summary.status)
+
+
+@dataclass
+class HierarchyNode:
+    identity: BackendIdentity
+    title: str
+    status: str
+    children: list["HierarchyNode"] = field(default_factory=list)
+    done_leaves: int = 0
+    total_leaves: int = 0
+    is_current: bool = False
+    link_label: Optional[str] = None
+
+    @property
+    def progress_label(self) -> str:
+        if self.link_label is not None:
+            suffix = f" — {self.title}" if self.title else ""
+            return f"{self.link_label}: {self.identity.display_key}{suffix}"
+        total = self.total_leaves
+        done = self.done_leaves
+        percent = round(100 * done / total) if total else 0
+        marker = "★ " if self.is_current else ""
+        return (
+            f"[{done}/{total} {percent}%] {marker}"
+            f"{self.identity.display_key} — {self.title}"
+        )
+
+
+def compute_progress(node: HierarchyNode) -> None:
+    """Fill done_leaves/total_leaves bottom-up (link leaves do not contribute)."""
+    progress_children = [child for child in node.children if child.link_label is None]
+    for child in progress_children:
+        compute_progress(child)
+    if node.link_label is not None:
+        node.done_leaves = 0
+        node.total_leaves = 0
+        return
+    if not progress_children:
+        node.total_leaves = 1
+        node.done_leaves = 1 if is_done_status(node.status) else 0
+        return
+    node.done_leaves = sum(child.done_leaves for child in progress_children)
+    node.total_leaves = sum(child.total_leaves for child in progress_children)
+
+
+def _node_from_summary(
+    summary: TaskSummary,
+    *,
+    is_current: bool = False,
+    link_label: Optional[str] = None,
+) -> HierarchyNode:
+    return HierarchyNode(
+        identity=summary.identity,
+        title=summary.title,
+        status=summary.status,
+        is_current=is_current,
+        link_label=link_label,
+    )
+
+
+def _node_from_identity(
+    identity: BackendIdentity,
+    *,
+    title: str = "",
+    status: str = "Unknown",
+    is_current: bool = False,
+    link_label: Optional[str] = None,
+) -> HierarchyNode:
+    return HierarchyNode(
+        identity=identity,
+        title=title,
+        status=status,
+        is_current=is_current,
+        link_label=link_label,
+    )
+
+
+def build_forest_from_details(details: Mapping[str, TaskDetail]) -> list[HierarchyNode]:
+    """Nest parent/child edges among loaded details into a forest of roots."""
+    if not details:
+        return []
+    nodes = {
+        stable_id: _node_from_summary(detail.summary)
+        for stable_id, detail in details.items()
+    }
+    children_of: dict[str, list[str]] = defaultdict(list)
+    parent_of: dict[str, str] = {}
+
+    def link_parent_child(parent_id: str, child_id: str) -> None:
+        if parent_id not in nodes or child_id not in nodes or parent_id == child_id:
+            return
+        if parent_of.get(child_id) == parent_id:
+            return
+        if child_id in parent_of:
+            return
+        stack = [child_id]
+        seen: set[str] = set()
+        while stack:
+            current = stack.pop()
+            if current == parent_id:
+                return
+            if current in seen:
+                continue
+            seen.add(current)
+            stack.extend(children_of.get(current, ()))
+        parent_of[child_id] = parent_id
+        children_of[parent_id].append(child_id)
+
+    for stable_id, detail in details.items():
+        for relation in detail.relationships:
+            target_id = relation.target.stable_id
+            if relation.kind is RelationshipKind.PARENT:
+                link_parent_child(target_id, stable_id)
+            elif relation.kind is RelationshipKind.CHILD:
+                link_parent_child(stable_id, target_id)
+
+    def attach(stable_id: str, stack: set[str]) -> HierarchyNode:
+        node = nodes[stable_id]
+        if stable_id in stack:
+            return node
+        stack.add(stable_id)
+        node.children = [
+            attach(child_id, stack)
+            for child_id in children_of.get(stable_id, ())
+            if child_id in nodes
+        ]
+        stack.remove(stable_id)
+        return node
+
+    roots = [attach(stable_id, set()) for stable_id in nodes if stable_id not in parent_of]
+    for root in roots:
+        compute_progress(root)
+    return roots
+
+
+def build_forest_from_summaries(tasks: Sequence[TaskSummary]) -> list[HierarchyNode]:
+    """Nest tasks by TaskSummary.parent when the parent is in the same set."""
+    summaries = list(tasks)
+    if not summaries:
+        return []
+    nodes = {task.identity.stable_id: _node_from_summary(task) for task in summaries}
+    children_of: dict[str, list[str]] = defaultdict(list)
+    parent_of: dict[str, str] = {}
+
+    def link_parent_child(parent_id: str, child_id: str) -> None:
+        if parent_id not in nodes or child_id not in nodes or parent_id == child_id:
+            return
+        if parent_of.get(child_id) == parent_id:
+            return
+        if child_id in parent_of:
+            return
+        stack = [child_id]
+        seen: set[str] = set()
+        while stack:
+            current = stack.pop()
+            if current == parent_id:
+                return
+            if current in seen:
+                continue
+            seen.add(current)
+            stack.extend(children_of.get(current, ()))
+        parent_of[child_id] = parent_id
+        children_of[parent_id].append(child_id)
+
+    for task in summaries:
+        if task.parent is not None:
+            link_parent_child(task.parent.stable_id, task.identity.stable_id)
+
+    def attach(stable_id: str, stack: set[str]) -> HierarchyNode:
+        node = nodes[stable_id]
+        if stable_id in stack:
+            return node
+        stack.add(stable_id)
+        node.children = [
+            attach(child_id, stack)
+            for child_id in children_of.get(stable_id, ())
+            if child_id in nodes
+        ]
+        stack.remove(stable_id)
+        return node
+
+    roots = [attach(stable_id, set()) for stable_id in nodes if stable_id not in parent_of]
+    for root in roots:
+        compute_progress(root)
+    return roots
+
+
+def expand_hierarchy(
+    controller: "TasksController",
+    seeds: Sequence[TaskSummary],
+    *,
+    max_depth: int = DEFAULT_TREE_MAX_DEPTH,
+    max_nodes: int = DEFAULT_TREE_MAX_NODES,
+) -> list[HierarchyNode]:
+    """Fetch parent/child details from seeds and return a progress-annotated forest."""
+    details: dict[str, TaskDetail] = {}
+    queue: list[tuple[BackendIdentity, int]] = [
+        (seed.identity, 0) for seed in seeds
+    ]
+    seen: set[str] = set()
+    while queue and len(details) < max_nodes:
+        identity, depth = queue.pop(0)
+        stable_id = identity.stable_id
+        if stable_id in seen:
+            continue
+        seen.add(stable_id)
+        detail, _error = controller.load_detail(identity)
+        if detail is None:
+            continue
+        details[stable_id] = detail
+        if depth >= max_depth:
+            continue
+        for relation in detail.relationships:
+            if relation.kind in (RelationshipKind.PARENT, RelationshipKind.CHILD):
+                if relation.target.stable_id not in seen:
+                    queue.append((relation.target, depth + 1))
+    return build_forest_from_details(details)
+
+
+def _descendants(
+    controller: "TasksController",
+    detail: TaskDetail,
+    *,
+    depth: int,
+    current_id: str,
+) -> HierarchyNode:
+    node = _node_from_summary(
+        detail.summary,
+        is_current=detail.identity.stable_id == current_id,
+    )
+    if depth > 0:
+        for relation in detail.relationships:
+            if relation.kind is not RelationshipKind.CHILD:
+                continue
+            child_detail, _error = controller.load_detail(relation.target)
+            if child_detail is not None:
+                node.children.append(
+                    _descendants(
+                        controller,
+                        child_detail,
+                        depth=depth - 1,
+                        current_id=current_id,
+                    )
+                )
+            else:
+                node.children.append(
+                    _node_from_identity(
+                        relation.target,
+                        title=relation.summary or "",
+                    )
+                )
+    if node.is_current:
+        for relation in detail.relationships:
+            if relation.kind in (RelationshipKind.PARENT, RelationshipKind.CHILD):
+                continue
+            node.children.append(
+                _node_from_identity(
+                    relation.target,
+                    title=relation.summary or "",
+                    link_label=relation.label,
+                )
+            )
+    return node
+
+
+def build_relationship_hierarchy(
+    controller: "TasksController",
+    detail: TaskDetail,
+    *,
+    max_ancestors: int = DEFAULT_DETAIL_ANCESTORS,
+    max_descendant_depth: int = DEFAULT_DETAIL_DESCENDANT_DEPTH,
+) -> HierarchyNode:
+    """Ancestor chain above current plus descendants (and other links under current)."""
+    current_id = detail.identity.stable_id
+    ancestors: list[TaskDetail] = []
+    cursor = detail
+    seen = {current_id}
+    for _ in range(max_ancestors):
+        parent_relation = next(
+            (
+                relation
+                for relation in cursor.relationships
+                if relation.kind is RelationshipKind.PARENT
+            ),
+            None,
+        )
+        if parent_relation is None or parent_relation.target.stable_id in seen:
+            break
+        parent_detail, _error = controller.load_detail(parent_relation.target)
+        if parent_detail is None:
+            break
+        ancestors.append(parent_detail)
+        seen.add(parent_detail.identity.stable_id)
+        cursor = parent_detail
+
+    node = _descendants(
+        controller,
+        detail,
+        depth=max_descendant_depth,
+        current_id=current_id,
+    )
+    for ancestor in ancestors:
+        parent_node = _node_from_summary(ancestor.summary)
+        parent_node.children = [node]
+        node = parent_node
+    compute_progress(node)
+    return node
 
 
 def task_url(
@@ -172,6 +523,16 @@ def task_url(
     return None
 
 
+def presentation_tasks(
+    items: Mapping[str, TaskSummary], query: Optional[str]
+) -> list[TaskSummary]:
+    """Default open list hides done issues; searches keep the full cached set."""
+    tasks = list(items.values())
+    if query:
+        return tasks
+    return [task for task in tasks if not is_done(task)]
+
+
 class TasksController:
     """Backend session + list/detail loading shared by screens and tests."""
 
@@ -181,26 +542,108 @@ class TasksController:
         *,
         initial_assignee_filter: AssigneeFilter = AssigneeFilter.ALL,
         on_assignee_filter_change: Optional[Callable[[AssigneeFilter], None]] = None,
+        cache_scope: Optional[str] = None,
+        cache_dir: Optional[str] = None,
     ) -> None:
         self.backend = backend
         self._initial_assignee_filter = initial_assignee_filter
         self._on_assignee_filter_change = on_assignee_filter_change
+        self.cache_scope = cache_scope
+        self.cache_dir = cache_dir
         self.detail_cache: dict[str, TaskDetail] = {}
+        self.cached_items: dict[str, TaskSummary] = {}
+        self._synced_at: Optional[str] = None
 
-    def load_list(self, state: ListState, *, refresh: bool = False) -> None:
+    def load_list(
+        self,
+        state: ListState,
+        *,
+        refresh: bool = False,
+        full: bool = False,
+    ) -> None:
         state.error = None
         try:
-            state.tasks = list(
-                self.backend.list_tasks(
-                    query=state.query,
-                    refresh=refresh,
-                    assignee_filter=state.assignee_filter,
+            if self.cache_scope:
+                self._load_list_cached(state, refresh=refresh, full=full)
+            else:
+                state.tasks = list(
+                    self.backend.list_tasks(
+                        query=state.query,
+                        refresh=refresh,
+                        assignee_filter=state.assignee_filter,
+                    )
                 )
-            )
+                self.cached_items = {
+                    task.identity.stable_id: task for task in state.tasks
+                }
             count = len(filter_tasks(state.tasks, state.filter_text))
             state.index = min(max(state.index, 0), max(0, count - 1))
         except Exception as error:  # Backends expose user-ready errors.
             state.error = str(error) or type(error).__name__
+
+    def _load_list_cached(
+        self,
+        state: ListState,
+        *,
+        refresh: bool,
+        full: bool,
+    ) -> None:
+        assert self.cache_scope is not None
+        entry = load_entry(
+            self.cache_scope,
+            state.query,
+            state.assignee_filter,
+            cache_dir=self.cache_dir,
+        )
+        if entry is not None and not refresh and not full:
+            self.cached_items = dict(entry.items)
+            self._synced_at = entry.synced_at
+            state.tasks = presentation_tasks(self.cached_items, state.query)
+            return
+
+        if entry is not None and refresh and not full:
+            since = self._delta_since(entry.synced_at)
+            delta = list(
+                self.backend.list_tasks(
+                    query=state.query,
+                    refresh=True,
+                    assignee_filter=state.assignee_filter,
+                    updated_since=since,
+                    include_closed=True,
+                )
+            )
+            entry.merge_items(delta)
+            entry.synced_at = utc_now_iso()
+            save_entry(self.cache_scope, entry, cache_dir=self.cache_dir)
+            self.cached_items = dict(entry.items)
+            self._synced_at = entry.synced_at
+            state.tasks = presentation_tasks(self.cached_items, state.query)
+            return
+
+        fetched = list(
+            self.backend.list_tasks(
+                query=state.query,
+                refresh=True,
+                assignee_filter=state.assignee_filter,
+                include_closed=False,
+            )
+        )
+        entry = CacheEntry(
+            synced_at=utc_now_iso(),
+            query=state.query,
+            assignee=state.assignee_filter,
+        )
+        entry.replace_items(fetched)
+        save_entry(self.cache_scope, entry, cache_dir=self.cache_dir)
+        self.cached_items = dict(entry.items)
+        self._synced_at = entry.synced_at
+        state.tasks = presentation_tasks(self.cached_items, state.query)
+
+    def _delta_since(self, synced_at: str) -> str:
+        label = getattr(self.backend, "backend_label", "")
+        if label == "Jira":
+            return format_jira_since(synced_at)
+        return format_github_since(synced_at)
 
     def load_detail(
         self,

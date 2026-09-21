@@ -79,6 +79,7 @@ class TaskSummary:
     labels: Tuple[str, ...] = field(default_factory=tuple)
     components: Tuple[str, ...] = field(default_factory=tuple)
     url: Optional[str] = None
+    parent: Optional[BackendIdentity] = None
 
     @property
     def display_key(self) -> str:

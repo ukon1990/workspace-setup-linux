@@ -58,12 +58,16 @@ def run(
     query: Optional[str] = None,
     initial_assignee_filter: AssigneeFilter = AssigneeFilter.ALL,
     on_assignee_filter_change: Optional[Callable[[AssigneeFilter], None]] = None,
+    cache_scope: Optional[str] = None,
+    cache_dir: Optional[str] = None,
 ) -> None:
     """Launch the task browser."""
     controller = TasksController(
         backend,
         initial_assignee_filter=initial_assignee_filter,
         on_assignee_filter_change=on_assignee_filter_change,
+        cache_scope=cache_scope,
+        cache_dir=cache_dir,
     )
     TasksApp(
         controller,

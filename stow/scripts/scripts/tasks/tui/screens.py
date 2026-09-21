@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import webbrowser
-from typing import Optional
+from typing import Optional, Sequence
 
 from textual import on, work
 from textual.app import ComposeResult
@@ -16,26 +16,28 @@ from textual.widgets import (
     Header,
     Input,
     Label,
-    ListItem,
-    ListView,
     LoadingIndicator,
     Markdown,
     OptionList,
     Static,
+    Tree,
 )
 from textual.widgets.option_list import Option
+from textual.widgets.tree import TreeNode
 
 from ..filters import AssigneeFilter
 from ..models import BackendIdentity, TaskDetail
 from .logic import (
     ASSIGNEE_FILTER_OPTIONS,
+    HierarchyNode,
     ListState,
     TasksController,
     assignee_filter_for_key,
     assignee_filter_text,
+    build_forest_from_summaries,
+    build_relationship_hierarchy,
     detail_content_text,
     filter_tasks,
-    relationship_line,
     selected_task,
     set_filter,
     task_url,
@@ -49,11 +51,14 @@ HELP_MARKDOWN = """\
 | `j` / `↓` | Move down |
 | `k` / `↑` | Move up |
 | `Enter` | Open task / relationship |
+| `Space` | Expand / collapse tree node |
+| `t` | Toggle table / tree |
 | `/` | Local text filter |
 | `f` | Assignee filter |
 | `c` | Clear filters |
 | `s` | Backend search |
-| `r` | Refresh |
+| `r` | Refresh (changed since last sync) |
+| `R` | Full reload (replace cache) |
 | `Tab` | Toggle detail panes |
 | `o` | Open task URL |
 | `?` | This help |
@@ -67,6 +72,20 @@ def _go_back(screen: Screen) -> None:
         screen.app.pop_screen()
     else:
         screen.app.exit()
+
+
+def _mount_hierarchy(
+    parent: TreeNode[BackendIdentity],
+    nodes: Sequence[HierarchyNode],
+    *,
+    expand: bool = True,
+) -> None:
+    for node in nodes:
+        tree_node = parent.add(node.progress_label, data=node.identity)
+        if node.children:
+            _mount_hierarchy(tree_node, node.children, expand=expand)
+            if expand:
+                tree_node.expand()
 
 
 class InputModal(ModalScreen[Optional[str]]):
@@ -175,11 +194,13 @@ class ListScreen(Screen):
         Binding("j", "cursor_down", "Down", show=False),
         Binding("k", "cursor_up", "Up", show=False),
         Binding("enter", "open_task", "Open", show=True),
+        Binding("t", "toggle_view", "Tree", show=True),
         Binding("slash", "local_filter", "Filter", show=True),
         Binding("f", "assignee_filter", "Assignee", show=True),
         Binding("c", "clear_filters", "Clear", show=True),
         Binding("s", "search", "Search", show=True),
         Binding("r", "refresh", "Refresh", show=True),
+        Binding("R", "full_reload", "Full", show=True),
         Binding("o", "open_url", "Open URL", show=True),
         Binding("question_mark", "help", "Help", show=True),
         Binding("h", "back", "Back", show=True),
@@ -201,11 +222,15 @@ class ListScreen(Screen):
         self._load_on_mount = load_on_mount
         self._pending_assignee: Optional[AssigneeFilter] = None
         self._reload_if_unchanged = False
+        self._view_mode = "table"
+        self._forest: list[HierarchyNode] = []
+        self._tree_loaded = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         yield Static(id="status-bar")
         yield DataTable(id="task-table", cursor_type="row", zebra_stripes=True)
+        yield Tree("Tasks", id="task-tree")
         yield Static("", id="empty-message")
         yield Footer()
         yield LoadingIndicator()
@@ -214,12 +239,15 @@ class ListScreen(Screen):
         self.query_one(LoadingIndicator).display = False
         table = self.query_one("#task-table", DataTable)
         table.add_columns("Key", "Status", "Type", "Priority", "Assignees", "Title")
+        tree = self.query_one("#task-tree", Tree)
+        tree.display = False
+        tree.show_root = False
         table.focus()
         self._update_chrome()
         if self._load_on_mount and not self.state.tasks and self.state.error is None:
             self.reload_list(refresh=False)
         else:
-            self._populate_table()
+            self._populate_view()
 
     def _update_chrome(self) -> None:
         backend = self.controller.backend
@@ -228,6 +256,10 @@ class ListScreen(Screen):
         assignee = assignee_filter_text(self.state.assignee_filter)
         filter_label = f" · filter: {self.state.filter_text}" if self.state.filter_text else ""
         visible = len(filter_tasks(self.state.tasks, self.state.filter_text))
+        view = "tree" if self._view_mode == "tree" else "table"
+        tree_note = ""
+        if self._view_mode == "tree" and self._forest:
+            tree_note = f" · tree: {self._count_nodes(self._forest)} nodes"
         status = self.query_one("#status-bar", Static)
         if self.state.error:
             status.update(f"Error: {self.state.error}")
@@ -235,13 +267,25 @@ class ListScreen(Screen):
         else:
             status.update(
                 f"Query: {query} · assignee: {assignee}{filter_label} · "
-                f"{visible}/{len(self.state.tasks)}"
+                f"{visible}/{len(self.state.tasks)} · view: {view}{tree_note}"
             )
             status.remove_class("error")
 
+    @staticmethod
+    def _count_nodes(nodes: Sequence[HierarchyNode]) -> int:
+        return sum(1 + ListScreen._count_nodes(node.children) for node in nodes)
+
+    def _populate_view(self) -> None:
+        if self._view_mode == "tree":
+            self._populate_tree()
+        else:
+            self._populate_table()
+
     def _populate_table(self) -> None:
         table = self.query_one("#task-table", DataTable)
+        tree = self.query_one("#task-tree", Tree)
         empty = self.query_one("#empty-message", Static)
+        tree.display = False
         table.clear()
         tasks = filter_tasks(self.state.tasks, self.state.filter_text)
         if self.state.error:
@@ -273,20 +317,64 @@ class ListScreen(Screen):
         index = min(max(self.state.index, 0), len(tasks) - 1)
         self.state.index = index
         table.move_cursor(row=index)
+        table.focus()
+
+    def _populate_tree(self) -> None:
+        table = self.query_one("#task-table", DataTable)
+        tree = self.query_one("#task-tree", Tree)
+        empty = self.query_one("#empty-message", Static)
+        table.display = False
+        tree.clear()
+        if self.state.error:
+            tree.display = False
+            empty.display = True
+            empty.update(f"Error: {self.state.error}")
+            return
+        if not self._forest and not filter_tasks(self.state.tasks, self.state.filter_text):
+            tree.display = False
+            empty.display = True
+            empty.update(
+                "No tasks match the local filter."
+                if self.state.tasks and self.state.filter_text
+                else "No tasks found."
+            )
+            return
+        empty.display = False
+        tree.display = True
+        _mount_hierarchy(tree.root, self._forest)
+        tree.root.expand()
+        tree.focus()
+        self._update_chrome()
 
     def _set_loading(self, active: bool) -> None:
         self.query_one(LoadingIndicator).display = active
 
-    @work(exclusive=True, thread=True)
-    def reload_list(self, refresh: bool = False) -> None:
-        self.app.call_from_thread(self._set_loading, True)
-        self.controller.load_list(self.state, refresh=refresh)
-        self.app.call_from_thread(self._after_reload)
+    def _build_forest(self) -> list[HierarchyNode]:
+        items = list(self.controller.cached_items.values()) or list(self.state.tasks)
+        if self.state.filter_text:
+            items = filter_tasks(items, self.state.filter_text)
+        return build_forest_from_summaries(items)
 
-    def _after_reload(self) -> None:
+    @work(exclusive=True, thread=True)
+    def reload_list(self, refresh: bool = False, full: bool = False) -> None:
+        self.app.call_from_thread(self._set_loading, True)
+        forest: list[HierarchyNode] = []
+        try:
+            self.controller.load_list(self.state, refresh=refresh, full=full)
+            if self._view_mode == "tree":
+                forest = self._build_forest()
+        finally:
+            self.app.call_from_thread(self._after_reload, forest)
+
+    def _after_reload(self, forest: Optional[list[HierarchyNode]] = None) -> None:
         self._set_loading(False)
+        if forest is not None and self._view_mode == "tree":
+            self._forest = forest
+            self._tree_loaded = True
+        elif self._view_mode == "table":
+            self._tree_loaded = False
         self._update_chrome()
-        self._populate_table()
+        self._populate_view()
 
     @work(exclusive=True, thread=True)
     def apply_assignee_filter(self) -> None:
@@ -295,24 +383,52 @@ class ListScreen(Screen):
             return
         reload_if_unchanged = self._reload_if_unchanged
         self.app.call_from_thread(self._set_loading, True)
-        self.controller.change_assignee_filter(
-            self.state,
-            selection,
-            reload_if_unchanged=reload_if_unchanged,
-        )
-        self.app.call_from_thread(self._after_reload)
+        forest: list[HierarchyNode] = []
+        try:
+            self.controller.change_assignee_filter(
+                self.state,
+                selection,
+                reload_if_unchanged=reload_if_unchanged,
+            )
+            if self._view_mode == "tree":
+                forest = self._build_forest()
+        finally:
+            self.app.call_from_thread(self._after_reload, forest)
 
     @work(exclusive=True, thread=True)
     def clear_filters_worker(self) -> None:
         self.app.call_from_thread(self._set_loading, True)
-        self.controller.clear_filters(self.state)
-        self.app.call_from_thread(self._after_reload)
+        forest: list[HierarchyNode] = []
+        try:
+            self.controller.clear_filters(self.state)
+            if self._view_mode == "tree":
+                forest = self._build_forest()
+        finally:
+            self.app.call_from_thread(self._after_reload, forest)
+
+    def action_toggle_view(self) -> None:
+        if self._view_mode == "table":
+            self._view_mode = "tree"
+            self._forest = self._build_forest()
+            self._tree_loaded = True
+            self._update_chrome()
+            self._populate_tree()
+        else:
+            self._view_mode = "table"
+            self._populate_table()
+            self._update_chrome()
 
     def action_cursor_down(self) -> None:
-        self.query_one("#task-table", DataTable).action_cursor_down()
+        if self._view_mode == "tree":
+            self.query_one("#task-tree", Tree).action_cursor_down()
+        else:
+            self.query_one("#task-table", DataTable).action_cursor_down()
 
     def action_cursor_up(self) -> None:
-        self.query_one("#task-table", DataTable).action_cursor_up()
+        if self._view_mode == "tree":
+            self.query_one("#task-tree", Tree).action_cursor_up()
+        else:
+            self.query_one("#task-table", DataTable).action_cursor_up()
 
     @on(DataTable.RowHighlighted)
     def track_cursor(self, event: DataTable.RowHighlighted) -> None:
@@ -325,19 +441,34 @@ class ListScreen(Screen):
             self.state.index = event.cursor_row
         self.action_open_task()
 
-    def action_open_task(self) -> None:
+    def _selected_identity(self) -> Optional[BackendIdentity]:
+        if self._view_mode == "tree":
+            node = self.query_one("#task-tree", Tree).cursor_node
+            if node is not None and isinstance(node.data, BackendIdentity):
+                return node.data
+            return None
         task = selected_task(self.state)
-        if task is None:
+        return task.identity if task else None
+
+    def action_open_task(self) -> None:
+        identity = self._selected_identity()
+        if identity is None:
             return
-        self.app.push_screen(DetailScreen(self.controller, task.identity))
+        self.app.push_screen(DetailScreen(self.controller, identity))
 
     def action_local_filter(self) -> None:
         def apply(value: Optional[str]) -> None:
             if value is None:
                 return
             set_filter(self.state, value)
+            self._tree_loaded = False
             self._update_chrome()
-            self._populate_table()
+            if self._view_mode == "tree":
+                self._forest = self._build_forest()
+                self._tree_loaded = True
+                self._populate_tree()
+            else:
+                self._populate_table()
 
         self.app.push_screen(
             InputModal("Local filter", initial=self.state.filter_text, placeholder="text…"),
@@ -370,11 +501,28 @@ class ListScreen(Screen):
         self.app.push_screen(InputModal("Backend search", placeholder="search…"), apply)
 
     def action_refresh(self) -> None:
-        self.reload_list(refresh=True)
+        self._tree_loaded = False
+        self.reload_list(refresh=True, full=False)
+
+    def action_full_reload(self) -> None:
+        self._tree_loaded = False
+        self.reload_list(refresh=True, full=True)
 
     def action_open_url(self) -> None:
-        task = selected_task(self.state)
-        url = task.url if task else None
+        identity = self._selected_identity()
+        url = None
+        if identity is not None:
+            cached = self.controller.detail_cache.get(identity.stable_id)
+            url = task_url(cached, identity)
+            if url is None:
+                task = selected_task(self.state)
+                if task and task.identity.stable_id == identity.stable_id:
+                    url = task.url
+                else:
+                    for item in self.state.tasks:
+                        if item.identity.stable_id == identity.stable_id:
+                            url = item.url
+                            break
         if not url:
             self.notify("No URL for this task", severity="warning")
             return
@@ -417,15 +565,16 @@ class DetailScreen(Screen):
         self.error: Optional[str] = None
         self._focus_relations = False
         self._pending_target: Optional[BackendIdentity] = None
+        self._hierarchy: Optional[HierarchyNode] = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         yield Static(id="status-bar")
         with Horizontal(id="detail-body"):
             with VerticalScroll(id="content-pane"):
-                yield Static("", id="content-body")
+                yield Markdown("", id="content-body")
             with Vertical(id="relations-pane"):
-                yield ListView(id="relations-list")
+                yield Tree("Relationships", id="relations-tree")
         yield Footer()
         yield LoadingIndicator()
 
@@ -433,6 +582,8 @@ class DetailScreen(Screen):
         self.query_one(LoadingIndicator).display = False
         self.query_one("#content-pane").border_title = "Content"
         self.query_one("#relations-pane").border_title = "Relationships"
+        tree = self.query_one("#relations-tree", Tree)
+        tree.show_root = False
         self._set_pane_focus(False)
         self.reload_detail(refresh=False)
 
@@ -446,27 +597,43 @@ class DetailScreen(Screen):
         content.set_class(not relations, "focused-pane")
         relations_pane.set_class(relations, "focused-pane")
         if relations:
-            self.query_one("#relations-list", ListView).focus()
+            self.query_one("#relations-tree", Tree).focus()
         else:
             self.query_one("#content-pane", VerticalScroll).focus()
 
     @work(exclusive=True, thread=True)
     def reload_detail(self, refresh: bool = False) -> None:
         self.app.call_from_thread(self._set_loading, True)
-        detail, error = self.controller.load_detail(self.identity, refresh=refresh)
-        self.app.call_from_thread(self._after_reload, detail, error)
+        detail = None
+        error = None
+        hierarchy = None
+        try:
+            detail, error = self.controller.load_detail(self.identity, refresh=refresh)
+            if detail is not None:
+                hierarchy = build_relationship_hierarchy(self.controller, detail)
+        finally:
+            self.app.call_from_thread(self._after_reload, detail, error, hierarchy)
 
-    def _after_reload(self, detail: Optional[TaskDetail], error: Optional[str]) -> None:
+    def _after_reload(
+        self,
+        detail: Optional[TaskDetail],
+        error: Optional[str],
+        hierarchy: Optional[HierarchyNode] = None,
+    ) -> None:
         self._set_loading(False)
         self.detail = detail
         self.error = error
+        self._hierarchy = hierarchy
         status = self.query_one("#status-bar", Static)
         if detail is None:
             key = self.identity.display_key
             self.title = f"{key} · Unavailable"
             status.update(f"Error: {error}" if error else "Task detail could not be loaded.")
             status.add_class("error")
-            self.query_one("#content-body", Static).update("Task detail could not be loaded.")
+            self.query_one("#content-body", Markdown).update(
+                "Task detail could not be loaded."
+            )
+            self._populate_relations_tree(None)
             return
         summary = detail.summary
         self.title = f"{summary.display_key} · {summary.title}"
@@ -479,14 +646,24 @@ class DetailScreen(Screen):
                 f"{', '.join(summary.assignees) or 'unassigned'}"
             )
             status.remove_class("error")
-        self.query_one("#content-body", Static).update(detail_content_text(detail))
-        relations = self.query_one("#relations-list", ListView)
-        relations.clear()
-        if not detail.relationships:
-            relations.append(ListItem(Label("None")))
-        else:
-            for relationship in detail.relationships:
-                relations.append(ListItem(Label(relationship_line(relationship))))
+        self.query_one("#content-body", Markdown).update(detail_content_text(detail))
+        self._populate_relations_tree(hierarchy)
+
+    def _populate_relations_tree(self, hierarchy: Optional[HierarchyNode]) -> None:
+        tree = self.query_one("#relations-tree", Tree)
+        tree.clear()
+        if hierarchy is None:
+            tree.root.add("None")
+            return
+        _mount_hierarchy(tree.root, [hierarchy])
+        tree.root.expand()
+
+    @on(Tree.NodeSelected)
+    def open_selected_relation(self, event: Tree.NodeSelected) -> None:
+        if event.node.data is None or not isinstance(event.node.data, BackendIdentity):
+            return
+        self._pending_target = event.node.data
+        self.open_related_worker()
 
     @work(exclusive=True, thread=True)
     def open_related_worker(self) -> None:
@@ -517,25 +694,23 @@ class DetailScreen(Screen):
 
     def action_move_down(self) -> None:
         if self._focus_relations:
-            self.query_one("#relations-list", ListView).action_cursor_down()
+            self.query_one("#relations-tree", Tree).action_cursor_down()
         else:
             self.query_one("#content-pane", VerticalScroll).scroll_down()
 
     def action_move_up(self) -> None:
         if self._focus_relations:
-            self.query_one("#relations-list", ListView).action_cursor_up()
+            self.query_one("#relations-tree", Tree).action_cursor_up()
         else:
             self.query_one("#content-pane", VerticalScroll).scroll_up()
 
     def action_open_relationship(self) -> None:
-        if not self._focus_relations or self.detail is None:
+        if not self._focus_relations:
             return
-        relationships = self.detail.relationships
-        if not relationships:
+        node = self.query_one("#relations-tree", Tree).cursor_node
+        if node is None or not isinstance(node.data, BackendIdentity):
             return
-        index = self.query_one("#relations-list", ListView).index or 0
-        index = min(max(index, 0), len(relationships) - 1)
-        self._pending_target = relationships[index].target
+        self._pending_target = node.data
         self.open_related_worker()
 
     def action_search(self) -> None:

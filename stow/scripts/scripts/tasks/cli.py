@@ -45,6 +45,9 @@ class JiraTuiBackend:
         query: Optional[str] = None,
         refresh: bool = False,
         assignee_filter: AssigneeFilter = AssigneeFilter.ALL,
+        *,
+        updated_since: Optional[str] = None,
+        include_closed: bool = False,
     ) -> Sequence[TaskSummary]:
         if query:
             return self.backend.search_tasks(
@@ -53,12 +56,16 @@ class JiraTuiBackend:
                 limit=self.limit,
                 jql_extra=self.jql_extra,
                 assignee_filter=assignee_filter,
+                updated_since=updated_since,
+                include_done=include_closed,
             )
         return self.backend.list_tasks(
             self.project,
             limit=self.limit,
             jql_extra=self.jql_extra,
             assignee_filter=assignee_filter,
+            updated_since=updated_since,
+            include_done=include_closed,
         )
 
     def get_task(self, identity: BackendIdentity, refresh: bool = False) -> TaskDetail:
@@ -80,10 +87,22 @@ class GithubTuiBackend:
         query: Optional[str] = None,
         refresh: bool = False,
         assignee_filter: AssigneeFilter = AssigneeFilter.ALL,
+        *,
+        updated_since: Optional[str] = None,
+        include_closed: bool = False,
     ) -> Sequence[TaskSummary]:
         if query:
-            return self.backend.search_issues(query, assignee_filter=assignee_filter)
-        return self.backend.list_issues(assignee_filter=assignee_filter)
+            return self.backend.search_issues(
+                query,
+                assignee_filter=assignee_filter,
+                updated_since=updated_since,
+                include_closed=include_closed,
+            )
+        return self.backend.list_issues(
+            assignee_filter=assignee_filter,
+            updated_since=updated_since,
+            include_closed=include_closed,
+        )
 
     def get_task(self, identity: BackendIdentity, refresh: bool = False) -> TaskDetail:
         if identity.backend is not Backend.GITHUB:
@@ -208,6 +227,7 @@ def _run_tui(
         query=query,
         initial_assignee_filter=loaded.selection,
         on_assignee_filter_change=persist,
+        cache_scope=scope,
     )
 
 

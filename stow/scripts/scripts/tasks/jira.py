@@ -20,7 +20,7 @@ from .references import jira_identity, parse_jira_references
 _PROJECT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _VERSION_RE = re.compile(r"\d+\.\d+(?:\.\d+)?")
 _LUCENE_RESERVED_RE = re.compile(r'([+\-!(){}\[\]^"~*?:\\/&|])')
-_SEARCH_FIELDS = "key,issuetype,summary,status,assignee,priority"
+_SEARCH_FIELDS = "key,issuetype,summary,status,assignee,priority,parent"
 _DETAIL_FIELDS = (
     "key,issuetype,summary,status,assignee,priority,labels,components,"
     "description,comment,parent,subtasks,issuelinks"
@@ -100,10 +100,18 @@ class JiraBackend:
         limit: Optional[int] = None,
         jql_extra: Optional[str] = None,
         assignee_filter: AssigneeFilter = AssigneeFilter.ALL,
+        updated_since: Optional[str] = None,
+        include_done: bool = False,
     ) -> Tuple[TaskSummary, ...]:
-        """List a bounded set of non-Done work items in one Jira project."""
+        """List a bounded set of work items in one Jira project."""
         project_key = self._project(project)
-        jql = self._jql(project_key, assignee_filter=assignee_filter, extra=jql_extra)
+        jql = self._jql(
+            project_key,
+            assignee_filter=assignee_filter,
+            extra=jql_extra,
+            updated_since=updated_since,
+            include_done=include_done,
+        )
         return self._search(jql, self._limit(limit))
 
     def search_tasks(
@@ -114,6 +122,8 @@ class JiraBackend:
         limit: Optional[int] = None,
         jql_extra: Optional[str] = None,
         assignee_filter: AssigneeFilter = AssigneeFilter.ALL,
+        updated_since: Optional[str] = None,
+        include_done: bool = False,
     ) -> Tuple[TaskSummary, ...]:
         """Search summary and description while retaining the project boundary."""
         if not isinstance(query, str) or not query.strip():
@@ -126,6 +136,8 @@ class JiraBackend:
             text_clause=text_clause,
             assignee_filter=assignee_filter,
             extra=jql_extra,
+            updated_since=updated_since,
+            include_done=include_done,
         )
         return self._search(jql, self._limit(limit))
 
@@ -196,8 +208,14 @@ class JiraBackend:
         text_clause: Optional[str] = None,
         assignee_filter: AssigneeFilter = AssigneeFilter.ALL,
         extra: Optional[str] = None,
+        updated_since: Optional[str] = None,
+        include_done: bool = False,
     ) -> str:
-        clauses = [f'project = "{project}"', "statusCategory != Done"]
+        clauses = [f'project = "{project}"']
+        if not include_done:
+            clauses.append("statusCategory != Done")
+        if updated_since:
+            clauses.append(f'updated >= "{updated_since}"')
         assignee_clause = {
             AssigneeFilter.ALL: None,
             AssigneeFilter.ME: "assignee = currentUser()",
@@ -288,6 +306,14 @@ def _summary(item: Mapping[str, Any], *, fallback_url: Optional[str] = None) -> 
     if not key:
         raise JiraError("Atlassian CLI returned a Jira work item without a key.")
     url = _browse_url(item, key) or fallback_url
+    parent = None
+    raw_parent = fields.get("parent")
+    if isinstance(raw_parent, dict):
+        parent_key = _item_key(raw_parent) or (
+            raw_parent.get("key") if isinstance(raw_parent.get("key"), str) else None
+        )
+        if isinstance(parent_key, str) and parent_key:
+            parent = BackendIdentity.jira(parent_key)
     return TaskSummary(
         identity=BackendIdentity.jira(key, url=url),
         title=_text_value(fields.get("summary")) or "(untitled)",
@@ -298,6 +324,7 @@ def _summary(item: Mapping[str, Any], *, fallback_url: Optional[str] = None) -> 
         labels=_string_tuple(fields.get("labels")),
         components=_named_tuple(fields.get("components")),
         url=url,
+        parent=parent,
     )
 
 
