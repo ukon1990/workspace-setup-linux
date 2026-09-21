@@ -20,7 +20,7 @@ from .references import jira_identity, parse_jira_references
 _PROJECT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _VERSION_RE = re.compile(r"\d+\.\d+(?:\.\d+)?")
 _LUCENE_RESERVED_RE = re.compile(r'([+\-!(){}\[\]^"~*?:\\/&|])')
-_SEARCH_FIELDS = "key,issuetype,summary,status,assignee,priority,parent,issuelinks"
+_SEARCH_FIELDS = "key,issuetype,summary,status,assignee,priority"
 _DETAIL_FIELDS = (
     "key,issuetype,summary,status,assignee,priority,labels,components,"
     "description,comment,parent,subtasks,issuelinks"
