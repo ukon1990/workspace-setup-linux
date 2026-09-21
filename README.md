@@ -185,7 +185,7 @@ python3 -m unittest discover -s stow/waybar/.config/waybar/scripts/tests -v
 
 ## Jira and GitHub task browser
 
-`tasks` is a read-only curses browser. Select exactly one backend:
+`tasks` is a read-only Textual browser. Select exactly one backend:
 
 ```bash
 tasks --jira --project PROJ
@@ -237,11 +237,11 @@ active filters and that scope's saved selection. State is stored at
 the current session and is not persisted.
 
 Use `s` for a fresh backend search, `j`/`k` or arrows to move, `Enter` to open,
-`Tab` to focus relationships, `h` or Backspace to go back, `r` to refresh, and
-`q` to quit.
+`Tab` to focus relationships, `o` to open the task URL in a browser, `?` for
+help, `h` / Backspace / Esc to go back, `r` to refresh, and `q` to quit.
 
-The dedicated PyYAML runtime is created automatically by the shared shell-tool
-bootstrap, or manually with:
+The dedicated PyYAML + Textual runtime is created automatically by the shared
+shell-tool bootstrap, or manually with:
 
 ```bash
 ~/scripts/tasks-setup.sh

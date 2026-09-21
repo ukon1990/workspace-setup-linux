@@ -103,7 +103,7 @@ class AdapterTests(unittest.TestCase):
 
 class MainTests(unittest.TestCase):
     @patch("tasks.cli.load_assignee_filter")
-    @patch("tasks.cli.run")
+    @patch("tasks.tui.run")
     @patch("tasks.cli.JiraBackend")
     @patch("tasks.cli.load_config")
     def test_resolves_direct_jira_identity_before_tui(
@@ -123,7 +123,7 @@ class MainTests(unittest.TestCase):
         self.assertIs(run.call_args.kwargs["initial_assignee_filter"], AssigneeFilter.ME)
 
     @patch("tasks.cli.load_assignee_filter")
-    @patch("tasks.cli.run")
+    @patch("tasks.tui.run")
     @patch("tasks.cli.GithubBackend")
     @patch("tasks.cli.load_config")
     def test_resolves_direct_github_number_after_repository_validation(
@@ -147,7 +147,7 @@ class MainTests(unittest.TestCase):
         )
 
     @patch("tasks.cli.load_assignee_filter")
-    @patch("tasks.cli.run")
+    @patch("tasks.tui.run")
     @patch("tasks.cli.GithubBackend")
     @patch("tasks.cli.load_config")
     def test_qualified_github_target_overrides_config_default(
@@ -170,7 +170,7 @@ class MainTests(unittest.TestCase):
     @patch("tasks.cli.clear_assignee_filter")
     @patch("tasks.cli.save_assignee_filter")
     @patch("tasks.cli.load_assignee_filter")
-    @patch("tasks.cli.run")
+    @patch("tasks.tui.run")
     @patch("tasks.cli.GithubBackend")
     @patch("tasks.cli.load_config")
     def test_filter_callback_saves_and_clears_resolved_repository_scope(
@@ -198,7 +198,7 @@ class MainTests(unittest.TestCase):
         clear_filter.assert_called_once_with("github:owner/repo")
 
     @patch("tasks.cli.load_assignee_filter")
-    @patch("tasks.cli.run")
+    @patch("tasks.tui.run")
     @patch("tasks.cli.JiraBackend")
     @patch("tasks.cli.load_config")
     def test_filter_load_warning_falls_back_to_all(
@@ -389,9 +389,28 @@ class LauncherTests(unittest.TestCase):
 
     def test_launcher_ignores_malicious_modules_in_caller_cwd(self):
         venv = TEST_ROOT / "venv"
-        python = venv / "bin/python"
-        python.parent.mkdir(parents=True)
-        python.symlink_to(Path(sys.executable).resolve())
+        create = subprocess.run(
+            [sys.executable, "-m", "venv", str(venv)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(create.returncode, 0, create.stderr)
+        install = subprocess.run(
+            [
+                str(venv / "bin/python"),
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                "-q",
+                "-r",
+                str(SCRIPTS_DIR / "tasks/requirements.txt"),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(install.returncode, 0, install.stderr)
+
         tasks_marker = TEST_ROOT / "tasks-imported"
         yaml_marker = TEST_ROOT / "yaml-imported"
         (TEST_ROOT / "tasks.py").write_text(

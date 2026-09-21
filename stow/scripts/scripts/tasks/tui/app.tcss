@@ -1,0 +1,128 @@
+/* Tasks Textual theme */
+
+Screen {
+    background: #1a1d23;
+}
+
+Header {
+    dock: top;
+    background: #252a33;
+    color: #e8eaed;
+    text-style: bold;
+}
+
+Footer {
+    dock: bottom;
+    background: #252a33;
+}
+
+#status-bar {
+    height: 1;
+    padding: 0 1;
+    color: #9aa0a6;
+    background: #1a1d23;
+}
+
+#status-bar.error {
+    color: #f28b82;
+}
+
+#empty-message {
+    width: 100%;
+    height: 1fr;
+    content-align: center middle;
+    color: #9aa0a6;
+}
+
+#task-table {
+    height: 1fr;
+    background: #1a1d23;
+}
+
+#task-table > .datatable--header {
+    background: #2b313b;
+    color: #e8eaed;
+    text-style: bold;
+}
+
+#task-table > .datatable--cursor {
+    background: #3d4f66;
+    color: #ffffff;
+}
+
+#task-table > .datatable--hover {
+    background: #2b313b;
+}
+
+#detail-body {
+    height: 1fr;
+}
+
+#content-pane {
+    width: 2fr;
+    border: solid #3d4f66;
+    border-title-color: #8ab4f8;
+    padding: 0 1;
+}
+
+#content-pane.focused-pane {
+    border: tall #8ab4f8;
+}
+
+#relations-pane {
+    width: 1fr;
+    border: solid #3d4f66;
+    border-title-color: #81c995;
+    padding: 0 1;
+}
+
+#relations-pane.focused-pane {
+    border: tall #81c995;
+}
+
+#content-body {
+    height: 1fr;
+}
+
+#relations-list {
+    height: 1fr;
+}
+
+LoadingIndicator {
+    background: #1a1d23 80%;
+}
+
+/* Modals */
+
+InputModal, AssigneeFilterModal, HelpScreen {
+    align: center middle;
+}
+
+.modal-box {
+    width: 60;
+    max-width: 90%;
+    height: auto;
+    max-height: 80%;
+    border: tall #8ab4f8;
+    background: #252a33;
+    padding: 1 2;
+}
+
+.modal-box Label {
+    margin-bottom: 1;
+}
+
+.modal-box Input {
+    margin-bottom: 1;
+}
+
+#help-body {
+    height: auto;
+    max-height: 24;
+    padding: 0 1;
+}
+
+#assignee-options {
+    height: auto;
+    max-height: 12;
+}

@@ -1,4 +1,7 @@
-import curses
+"""Tests for tasks TUI helpers and controller."""
+
+from __future__ import annotations
+
 import unittest
 from unittest.mock import patch
 
@@ -12,24 +15,17 @@ from tasks.models import (
     TaskSummary,
 )
 from tasks.tui import (
-    AppState,
-    DetailFocus,
-    DetailState,
     ListState,
-    TasksTui,
+    TasksController,
     assignee_filter_for_key,
     assignee_filter_text,
-    clamp_selection,
     clip,
     detail_content_lines,
     filter_tasks,
-    go_back,
-    move_list,
-    move_relationship,
-    push_screen,
     relationship_line,
+    selected_task,
     set_filter,
-    toggle_detail_focus,
+    task_url,
     wrap_text,
 )
 
@@ -82,29 +78,6 @@ class FakeBackend:
         return self.details[identity.stable_id]
 
 
-class FakeScreen:
-    def __init__(self, keys, sizes=((24, 80),)):
-        self.keys = iter(keys)
-        self.sizes = iter(sizes)
-        self.size = (24, 80)
-
-    def getmaxyx(self):
-        self.size = next(self.sizes, self.size)
-        return self.size
-
-    def get_wch(self):
-        return next(self.keys)
-
-    def addstr(self, *args):
-        pass
-
-    def clrtoeol(self):
-        pass
-
-    def refresh(self):
-        pass
-
-
 class HelperTests(unittest.TestCase):
     def test_assignee_filter_labels_and_keys(self):
         expected = {
@@ -120,7 +93,7 @@ class HelperTests(unittest.TestCase):
                 self.assertEqual(assignee_filter_for_key(key.upper()), selection)
                 self.assertEqual(assignee_filter_text(selection), label)
         self.assertIsNone(assignee_filter_for_key("?"))
-        self.assertIsNone(assignee_filter_for_key(curses.KEY_UP))
+        self.assertIsNone(assignee_filter_for_key(1))
 
     def test_clip_and_wrap_are_bounded(self):
         self.assertEqual(clip("abcdef", 3), "abc")
@@ -146,18 +119,11 @@ class HelperTests(unittest.TestCase):
                 self.assertEqual(filter_tasks(tasks, needle), tasks)
         self.assertEqual(filter_tasks(tasks, "missing"), [])
 
-    def test_selection_clamps_and_scrolls(self):
-        self.assertEqual(clamp_selection(7, 0, 10, 3), (7, 5))
-        self.assertEqual(clamp_selection(-1, 5, 10, 3), (0, 0))
-        self.assertEqual(clamp_selection(4, 8, 2, 3), (1, 0))
-        self.assertEqual(clamp_selection(4, 8, 0, 3), (0, 0))
-
-    def test_filter_and_move_reset_and_update_view(self):
-        state = ListState([summary(i) for i in range(1, 7)], index=4, scroll=3)
+    def test_filter_resets_index(self):
+        state = ListState([summary(i) for i in range(1, 7)], index=4)
         set_filter(state, "Task")
-        self.assertEqual((state.index, state.scroll), (0, 0))
-        move_list(state, 4, visible=2)
-        self.assertEqual((state.index, state.scroll), (4, 3))
+        self.assertEqual(state.index, 0)
+        self.assertEqual(selected_task(state).identity.key, "1")
 
     def test_detail_text_and_relationship_keep_directional_labels(self):
         relation = TaskRelationship(
@@ -174,116 +140,25 @@ class HelperTests(unittest.TestCase):
             "is blocked by: owner/repo#8 — Dependency",
         )
 
-    def test_detail_focus_and_relationship_movement(self):
-        target = BackendIdentity.github(2, "owner/repo")
-        relations = (
-            TaskRelationship(RelationshipKind.BLOCKS, target, "blocks"),
-            TaskRelationship(RelationshipKind.RELATED, target, "relates to"),
-        )
-        state = DetailState(
-            BackendIdentity.github(1, "owner/repo"),
-            detail(1, relationships=relations),
-        )
-        toggle_detail_focus(state)
-        move_relationship(state, 5)
-        self.assertEqual(state.focus, DetailFocus.RELATIONSHIPS)
-        self.assertEqual(state.relationship_index, 1)
-        move_relationship(state, -5)
-        self.assertEqual(state.relationship_index, 0)
-
-
-class HistoryTests(unittest.TestCase):
-    def test_history_restores_exact_list_state(self):
-        original = ListState(
-            [summary(1), summary(2)],
-            query="mine",
-            assignee_filter=AssigneeFilter.ME,
-            filter_text="alpha",
-            index=1,
-            scroll=1,
-        )
-        state = AppState(original)
-        push_screen(
-            state,
-            DetailState(
-                BackendIdentity.github(2, "owner/repo"),
-                focus=DetailFocus.RELATIONSHIPS,
-                content_scroll=5,
-                relationship_index=2,
-            ),
-        )
-        original.filter_text = "changed after snapshot"
-        self.assertTrue(go_back(state))
-        self.assertEqual(state.screen.query, "mine")
-        self.assertEqual(state.screen.assignee_filter, AssigneeFilter.ME)
-        self.assertEqual(state.screen.filter_text, "alpha")
-        self.assertEqual((state.screen.index, state.screen.scroll), (1, 1))
-
-    def test_history_restores_exact_detail_state(self):
-        first = DetailState(
-            BackendIdentity.github(1, "owner/repo"),
-            detail(1),
-            focus=DetailFocus.RELATIONSHIPS,
-            content_scroll=4,
-            relationship_index=1,
-            relationship_scroll=1,
-        )
-        state = AppState(first)
-        push_screen(state, DetailState(BackendIdentity.github(2, "owner/repo")))
-        self.assertTrue(go_back(state))
-        self.assertEqual(state.screen.focus, DetailFocus.RELATIONSHIPS)
-        self.assertEqual(state.screen.content_scroll, 4)
-        self.assertEqual(state.screen.relationship_index, 1)
-        self.assertEqual(state.screen.relationship_scroll, 1)
-
-    def test_direct_detail_back_signals_exit(self):
-        state = AppState(DetailState(BackendIdentity.github(1, "owner/repo")))
-        self.assertFalse(go_back(state))
+    def test_task_url_prefers_summary_then_identity(self):
+        item = summary(1, url="https://example.test/1")
+        loaded = TaskDetail(item, description="")
+        self.assertEqual(task_url(loaded), "https://example.test/1")
+        identity = BackendIdentity.github(2, "owner/repo", url="https://example.test/2")
+        self.assertEqual(task_url(None, identity), "https://example.test/2")
+        self.assertIsNone(task_url(None, BackendIdentity.github(3, "owner/repo")))
 
 
 class ControllerTests(unittest.TestCase):
-    def test_filter_menu_selects_and_cancel_preserves_state(self):
-        tui = TasksTui(FakeBackend(), initial_assignee_filter=AssigneeFilter.ME)
-        screen = FakeScreen(["?", "u"])
-        self.assertEqual(tui._filter_menu(screen), AssigneeFilter.UNASSIGNED)
-
-        screen = FakeScreen(["\x1b"])
-        self.assertIsNone(tui._filter_menu(screen))
-        self.assertEqual(tui.state.screen.assignee_filter, AssigneeFilter.ME)
-
-    def test_prompt_accepts_printable_unicode(self):
-        tui = TasksTui(FakeBackend())
-        screen = FakeScreen(["æ", "ø", "å", "\n"])
-
-        with patch("tasks.tui.curses.curs_set"):
-            self.assertEqual(tui._prompt(screen, "Filter: "), "æøå")
-
-    def test_prompt_handles_resize_backspace_and_special_integer_keys(self):
-        tui = TasksTui(FakeBackend())
-        screen = FakeScreen(
-            [curses.KEY_RESIZE, curses.KEY_LEFT, curses.KEY_BACKSPACE, "å", "\r"],
-            sizes=((24, 80), (30, 100)),
-        )
-
-        with patch("tasks.tui.curses.curs_set"):
-            self.assertEqual(tui._prompt(screen, "Filter: ", "ab"), "aå")
-
-    def test_prompt_escape_cancels(self):
-        tui = TasksTui(FakeBackend())
-        screen = FakeScreen(["æ", "\x1b"])
-
-        with patch("tasks.tui.curses.curs_set"):
-            self.assertIsNone(tui._prompt(screen, "Filter: "))
-
     def test_initial_list_and_refresh_use_protocol_flags(self):
         backend = FakeBackend()
-        tui = TasksTui(
+        controller = TasksController(
             backend,
-            query="ready",
             initial_assignee_filter=AssigneeFilter.ME_OR_UNASSIGNED,
         )
-        tui.load_initial()
-        tui.refresh()
+        state = controller.make_list_state(query="ready")
+        controller.load_list(state)
+        controller.load_list(state, refresh=True)
         self.assertEqual(
             backend.list_calls,
             [
@@ -295,14 +170,11 @@ class ControllerTests(unittest.TestCase):
     def test_structured_filter_reloads_search_and_notifies(self):
         backend = FakeBackend()
         changes = []
-        tui = TasksTui(
-            backend,
-            query="ready",
-            on_assignee_filter_change=changes.append,
-        )
-        tui.load_initial()
+        controller = TasksController(backend, on_assignee_filter_change=changes.append)
+        state = controller.make_list_state(query="ready")
+        controller.load_list(state)
 
-        self.assertTrue(tui.change_assignee_filter(AssigneeFilter.ME))
+        self.assertTrue(controller.change_assignee_filter(state, AssigneeFilter.ME))
         self.assertEqual(
             backend.list_calls[-1],
             ("ready", False, AssigneeFilter.ME),
@@ -310,7 +182,8 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(changes, [AssigneeFilter.ME])
 
         self.assertFalse(
-            tui.change_assignee_filter(
+            controller.change_assignee_filter(
+                state,
                 AssigneeFilter.ME,
                 reload_if_unchanged=True,
             )
@@ -321,26 +194,26 @@ class ControllerTests(unittest.TestCase):
     def test_clear_resets_both_filters_and_only_reloads_structured_change(self):
         backend = FakeBackend()
         changes = []
-        tui = TasksTui(
+        controller = TasksController(
             backend,
-            initial_tasks=backend.tasks,
             initial_assignee_filter=AssigneeFilter.UNASSIGNED,
             on_assignee_filter_change=changes.append,
         )
-        tui.state.screen.filter_text = "alpha"
+        state = controller.make_list_state(tasks=backend.tasks)
+        state.filter_text = "alpha"
 
-        self.assertTrue(tui.clear_filters())
-        self.assertEqual(tui.state.screen.filter_text, "")
-        self.assertEqual(tui.state.screen.assignee_filter, AssigneeFilter.ALL)
+        self.assertTrue(controller.clear_filters(state))
+        self.assertEqual(state.filter_text, "")
+        self.assertEqual(state.assignee_filter, AssigneeFilter.ALL)
         self.assertEqual(
             backend.list_calls,
             [(None, False, AssigneeFilter.ALL)],
         )
         self.assertEqual(changes, [AssigneeFilter.ALL])
 
-        tui.state.screen.filter_text = "beta"
-        self.assertFalse(tui.clear_filters())
-        self.assertEqual(tui.state.screen.filter_text, "")
+        state.filter_text = "beta"
+        self.assertFalse(controller.clear_filters(state))
+        self.assertEqual(state.filter_text, "")
         self.assertEqual(len(backend.list_calls), 1)
         self.assertEqual(changes, [AssigneeFilter.ALL, AssigneeFilter.ALL])
 
@@ -360,127 +233,72 @@ class ControllerTests(unittest.TestCase):
         def fail_to_persist(_selection):
             raise RuntimeError("cannot persist")
 
-        tui = TasksTui(
+        controller = TasksController(
             backend,
-            initial_tasks=backend.tasks,
             on_assignee_filter_change=fail_to_persist,
         )
-        self.assertTrue(tui.change_assignee_filter(AssigneeFilter.ME))
-        self.assertEqual(tui.state.screen.assignee_filter, AssigneeFilter.ME)
-        self.assertEqual(tui.state.screen.tasks, backend.tasks)
-        self.assertEqual(tui.state.screen.error, "offline; cannot persist")
+        state = controller.make_list_state(tasks=backend.tasks)
+        self.assertTrue(controller.change_assignee_filter(state, AssigneeFilter.ME))
+        self.assertEqual(state.assignee_filter, AssigneeFilter.ME)
+        self.assertEqual(state.tasks, backend.tasks)
+        self.assertEqual(state.error, "offline; cannot persist")
 
     def test_details_are_loaded_lazily_and_cached(self):
         backend = FakeBackend()
-        tui = TasksTui(backend, initial_tasks=backend.tasks)
-        self.assertTrue(tui.open_selected_task())
+        controller = TasksController(backend)
+        identity = backend.tasks[0].identity
+        first, error = controller.load_detail(identity)
+        self.assertIsNone(error)
+        self.assertEqual(first.summary.title, "Task 1")
         self.assertEqual(backend.detail_calls, [("github:owner/repo:1", False)])
-        self.assertTrue(go_back(tui.state))
-        self.assertTrue(tui.open_selected_task())
+        second, error = controller.load_detail(identity)
+        self.assertIs(first, second)
         self.assertEqual(backend.detail_calls, [("github:owner/repo:1", False)])
 
     def test_refresh_replaces_cached_detail(self):
         backend = FakeBackend()
-        tui = TasksTui(backend, initial_identity=backend.tasks[0].identity)
-        tui.load_initial()
-        tui.refresh()
+        controller = TasksController(backend)
+        identity = backend.tasks[0].identity
+        controller.load_detail(identity)
+        controller.load_detail(identity, refresh=True)
         self.assertEqual(
             backend.detail_calls,
             [("github:owner/repo:1", False), ("github:owner/repo:1", True)],
         )
 
-    def test_failed_relationship_fetch_is_retryable_without_history_damage(self):
+    def test_failed_relationship_fetch_is_retryable(self):
         target = BackendIdentity.github(2, "owner/repo")
-        relation = TaskRelationship(RelationshipKind.BLOCKS, target, "blocks")
         backend = FakeBackend()
-        backend.details["github:owner/repo:1"] = detail(1, relationships=(relation,))
+        controller = TasksController(backend)
         backend.failures.add(target.stable_id)
-        tui = TasksTui(backend, initial_identity=BackendIdentity.github(1, "owner/repo"))
-        tui.load_initial()
 
-        self.assertFalse(tui.open_selected_relationship())
-        self.assertEqual(tui.state.screen.relationship_index, 0)
-        self.assertEqual(tui.state.screen.error, "not available")
-        self.assertEqual(tui.state.history, [])
+        detail, error = controller.load_detail(target)
+        self.assertIsNone(detail)
+        self.assertEqual(error, "not available")
 
         backend.failures.clear()
-        self.assertTrue(tui.open_selected_relationship())
-        self.assertEqual(tui.state.screen.identity, target)
-        self.assertEqual(len(tui.state.history), 1)
+        detail, error = controller.load_detail(target)
+        self.assertIsNone(error)
+        self.assertEqual(detail.identity, target)
         self.assertEqual(
             backend.detail_calls[-2:],
             [("github:owner/repo:2", False), ("github:owner/repo:2", False)],
         )
-        self.assertTrue(go_back(tui.state))
-        self.assertIsNone(tui.state.screen.error)
 
-    def test_opening_relationship_preserves_detail_scroll_in_history(self):
-        target = BackendIdentity.github(2, "owner/repo")
-        relations = (
-            TaskRelationship(RelationshipKind.BLOCKS, target, "blocks"),
-            TaskRelationship(RelationshipKind.RELATED, target, "relates to"),
-        )
+    def test_search_list_state_keeps_assignee_filter(self):
         backend = FakeBackend()
-        backend.details["github:owner/repo:1"] = detail(1, relationships=relations)
-        tui = TasksTui(backend, initial_identity=BackendIdentity.github(1, "owner/repo"))
-        tui.load_initial()
-        tui.state.screen.relationship_index = 1
-        tui.state.screen.relationship_scroll = 0
-        self.assertTrue(tui.open_selected_relationship())
-        self.assertTrue(go_back(tui.state))
-        self.assertEqual(
-            (tui.state.screen.relationship_index, tui.state.screen.relationship_scroll),
-            (1, 0),
+        controller = TasksController(
+            backend,
+            initial_assignee_filter=AssigneeFilter.ME,
         )
-
-    def test_search_pushes_current_screen_and_restores_it(self):
-        backend = FakeBackend()
-        original = ListState(
-            backend.tasks,
-            assignee_filter=AssigneeFilter.ME,
-            filter_text="alpha",
-            index=1,
-            scroll=1,
-        )
-        tui = TasksTui(backend, initial_tasks=backend.tasks)
-        tui.state.screen = original
-        tui.search("backend query")
-        self.assertEqual(tui.state.screen.query, "backend query")
-        self.assertEqual(tui.state.screen.assignee_filter, AssigneeFilter.ME)
+        state = controller.make_list_state(query="backend query")
+        controller.load_list(state)
+        self.assertEqual(state.query, "backend query")
+        self.assertEqual(state.assignee_filter, AssigneeFilter.ME)
         self.assertEqual(
             backend.list_calls[-1],
             ("backend query", False, AssigneeFilter.ME),
         )
-        self.assertTrue(go_back(tui.state))
-        self.assertEqual(tui.state.screen.assignee_filter, AssigneeFilter.ME)
-        self.assertEqual(tui.state.screen.filter_text, "alpha")
-        self.assertEqual((tui.state.screen.index, tui.state.screen.scroll), (1, 1))
-
-    def test_search_from_direct_detail_restores_detail_then_exits(self):
-        backend = FakeBackend()
-        tui = TasksTui(
-            backend,
-            initial_identity=backend.tasks[0].identity,
-            initial_assignee_filter=AssigneeFilter.ASSIGNED_ANYONE,
-        )
-        tui.load_initial()
-        tui.state.screen.focus = DetailFocus.RELATIONSHIPS
-        tui.state.screen.content_scroll = 3
-        tui.search("next")
-        self.assertEqual(tui.state.screen.assignee_filter, AssigneeFilter.ASSIGNED_ANYONE)
-        self.assertTrue(go_back(tui.state))
-        self.assertEqual(tui.state.screen.focus, DetailFocus.RELATIONSHIPS)
-        self.assertEqual(tui.state.screen.content_scroll, 3)
-        self.assertFalse(go_back(tui.state))
-
-    def test_opening_task_preserves_list_scroll_in_history(self):
-        backend = FakeBackend()
-        tui = TasksTui(backend, initial_tasks=backend.tasks)
-        tui.state.screen.index = 1
-        tui.state.screen.scroll = 0
-        self.assertTrue(tui.open_selected_task())
-        self.assertTrue(go_back(tui.state))
-        self.assertEqual((tui.state.screen.index, tui.state.screen.scroll), (1, 0))
 
     def test_list_error_and_empty_results_remain_refreshable(self):
         class FailingBackend(FakeBackend):
@@ -492,10 +310,65 @@ class ControllerTests(unittest.TestCase):
             ):
                 raise RuntimeError("offline")
 
-        tui = TasksTui(FailingBackend())
-        tui.load_initial()
-        self.assertEqual(tui.state.screen.error, "offline")
-        self.assertEqual(tui.state.screen.tasks, [])
+        controller = TasksController(FailingBackend())
+        state = controller.make_list_state()
+        controller.load_list(state)
+        self.assertEqual(state.error, "offline")
+        self.assertEqual(state.tasks, [])
+
+
+class AppSmokeTests(unittest.TestCase):
+    def test_list_to_detail_and_back(self):
+        from tasks.tui.app import TasksApp
+
+        backend = FakeBackend()
+        controller = TasksController(backend)
+        app = TasksApp(
+            controller,
+            initial_tasks=backend.tasks,
+            load_list_on_mount=False,
+        )
+
+        async def run_pilot(pilot):
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            from tasks.tui.screens import DetailScreen, ListScreen
+
+            self.assertIsInstance(app.screen, DetailScreen)
+            await pilot.press("h")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, ListScreen)
+            await pilot.press("q")
+
+        app.run(headless=True, auto_pilot=run_pilot)
+
+    def test_open_url_uses_webbrowser(self):
+        from tasks.tui.app import TasksApp
+
+        backend = FakeBackend()
+        backend.tasks = [summary(1, "Alpha", url="https://example.test/issue/1")]
+        backend.details = {
+            backend.tasks[0].identity.stable_id: TaskDetail(backend.tasks[0], description="")
+        }
+        controller = TasksController(backend)
+        app = TasksApp(
+            controller,
+            initial_identity=backend.tasks[0].identity,
+            load_list_on_mount=False,
+        )
+
+        opened = []
+
+        async def run_pilot(pilot):
+            await pilot.pause()
+            await pilot.press("o")
+            await pilot.pause()
+            self.assertEqual(opened, ["https://example.test/issue/1"])
+            await pilot.press("q")
+
+        with patch("tasks.tui.screens.webbrowser.open", side_effect=opened.append):
+            app.run(headless=True, auto_pilot=run_pilot)
 
 
 if __name__ == "__main__":

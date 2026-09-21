@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from typing import Optional, Sequence
+from typing import TYPE_CHECKING, Optional, Sequence
 
 from .config import ConfigError, TasksConfig, load_config
 from .filters import (
@@ -18,7 +18,9 @@ from .github import GithubBackend, GithubError
 from .jira import JiraBackend, JiraError
 from .models import Backend, BackendIdentity, TaskDetail, TaskSummary
 from .references import github_identity, jira_identity
-from .tui import TaskBackend, run
+
+if TYPE_CHECKING:
+    from .tui import TaskBackend
 
 
 class JiraTuiBackend:
@@ -183,11 +185,13 @@ def _run_github(
 
 
 def _run_tui(
-    adapter: TaskBackend,
+    adapter: "TaskBackend",
     scope: str,
     identity: Optional[BackendIdentity],
     query: Optional[str],
 ) -> None:
+    from .tui import run
+
     loaded = load_assignee_filter(scope)
     if loaded.warning:
         print(f"tasks: warning: {loaded.warning}", file=sys.stderr)
