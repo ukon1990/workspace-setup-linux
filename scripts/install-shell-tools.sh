@@ -10,6 +10,7 @@ SDKMAN_JAVA_VERSION="${SDKMAN_JAVA_VERSION:-25.0.2-amzn}"
 RUBY_VERSION="${RUBY_VERSION:-3.4.9}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NPM_GLOBAL_FILE="${NPM_GLOBAL_FILE:-$ROOT/packages/npm-global.txt}"
+TASKS_SETUP_SCRIPT="${TASKS_SETUP_SCRIPT:-$ROOT/stow/scripts/scripts/tasks-setup.sh}"
 DRY_RUN="${DRY_RUN:-0}"
 
 ensure_dep() {
@@ -155,6 +156,14 @@ install_ruby_with_rbenv() {
   rbenv rehash
 }
 
+install_tasks_runtime() {
+  if [[ ! -x "$TASKS_SETUP_SCRIPT" ]]; then
+    echo "Tasks setup script not found or not executable: $TASKS_SETUP_SCRIPT"
+    exit 1
+  fi
+  DRY_RUN="$DRY_RUN" "$TASKS_SETUP_SCRIPT"
+}
+
 main() {
   ensure_dep curl
   ensure_dep bash
@@ -164,6 +173,7 @@ main() {
   install_sdkman
   install_sdkman_java
   install_ruby_with_rbenv
+  install_tasks_runtime
 
   echo
   echo "Shell tools installed. Restart your shell or source the init scripts."
@@ -173,6 +183,7 @@ main() {
   echo "Java:   ${SDKMAN_JAVA_VERSION}"
   echo "rbenv:  $(command -v rbenv)"
   echo "Ruby:   $(resolve_ruby_version)"
+  echo "tasks:  ${TASKS_VENV:-$HOME/.local/share/tasks/venv}"
 }
 
 main "$@"

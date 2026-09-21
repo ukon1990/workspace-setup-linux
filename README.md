@@ -20,6 +20,7 @@ This repo is meant to be **public-safe**:
 - theme CLI under `stow/themes` (see `stow/themes/.config/themes/README.md`)
 - Waybar widgets + NetHogs setup via `scripts/setup-network-usage.sh`
 - day-to-day helpers under the stow `scripts` package (`closeports`, `gh-delete-all-artifact`, …)
+- a read-only Jira/GitHub task browser (`tasks`)
 
 ## Structure
 - `stow/` — actual dotfiles, grouped by package
@@ -180,6 +181,84 @@ python3 -m unittest discover -s scripts/tests -v
 python3 -m unittest discover -s stow/scripts/scripts/gh-delete-all-artifact/tests -v
 python3 -m unittest discover -s stow/themes/.config/themes/tests -v
 python3 -m unittest discover -s stow/waybar/.config/waybar/scripts/tests -v
+```
+
+## Jira and GitHub task browser
+
+`tasks` is a read-only curses browser. Select exactly one backend:
+
+```bash
+tasks --jira --project PROJ
+tasks --jira PROJ-123
+tasks --jira https://example.atlassian.net/browse/PROJ-123
+tasks --gh
+tasks --gh 123
+tasks --gh owner/repo#123
+tasks --gh https://github.com/owner/repo/issues/123
+tasks --gh --repo owner/repo --query "parser bug"
+```
+
+GitHub uses the current checkout unless `--repo` or a configured default is
+provided. Jira list mode needs `--project` or a configured default. `--query`
+starts a backend search; `--jql-extra` adds Jira filtering and `--search` adds
+GitHub search qualifiers. Direct keys, numbers, qualified references, and issue
+URLs open the issue immediately.
+
+Configuration defaults to `~/.config/tasks/config.yaml` and can be overridden
+with `--config`:
+
+```yaml
+jira:
+  default_project: PROJ
+  limit: 100
+  jql_extra: 'labels = "ready"'
+github:
+  default_repo: owner/repo
+  limit: 100
+  search: "label:ready"
+```
+
+Supported keys are `jira.default_project`, `jira.limit`, `jira.jql_extra`,
+`github.default_repo`, `github.limit`, and `github.search`. Unknown or invalid
+values are rejected.
+
+In the task list, press `f` to filter by assignee:
+
+- `a`: all issues
+- `m`: assigned to me
+- `u`: unassigned
+- `o`: assigned to me or unassigned
+- `d`: assigned to anyone
+
+The selected assignee filter is restored separately for each Jira project and
+GitHub repository. Choosing a non-`All` option saves it; `c` clears both the
+active filters and that scope's saved selection. State is stored at
+`~/.local/state/tasks/filters.yaml`. The `/` free-text filter remains local to
+the current session and is not persisted.
+
+Use `s` for a fresh backend search, `j`/`k` or arrows to move, `Enter` to open,
+`Tab` to focus relationships, `h` or Backspace to go back, `r` to refresh, and
+`q` to quit.
+
+The dedicated PyYAML runtime is created automatically by the shared shell-tool
+bootstrap, or manually with:
+
+```bash
+~/scripts/tasks-setup.sh
+```
+
+The command never installs backend CLIs and never writes to Jira or GitHub.
+Install/authenticate GitHub CLI with `brew install gh` (macOS) or
+`sudo pacman -S github-cli` (Arch), then `gh auth login`. Install Atlassian CLI
+from Atlassian's official instructions (`brew tap atlassian/homebrew-acli &&
+brew install acli` on macOS), then run `acli jira auth login`.
+
+Run its tests and checks with:
+
+```bash
+PYTHONPATH=stow/scripts/scripts python3 -m unittest discover -s stow/scripts/scripts/tasks/tests -v
+ruff check stow/scripts/scripts/tasks
+bash -n stow/scripts/scripts/tasks.sh stow/scripts/scripts/tasks-setup.sh scripts/install-shell-tools.sh
 ```
 
 ## Download links
