@@ -80,6 +80,8 @@ class TaskSummary:
     components: Tuple[str, ...] = field(default_factory=tuple)
     url: Optional[str] = None
     parent: Optional[BackendIdentity] = None
+    blocked_by: Tuple[BackendIdentity, ...] = field(default_factory=tuple)
+    blocks: Tuple[BackendIdentity, ...] = field(default_factory=tuple)
 
     @property
     def display_key(self) -> str:

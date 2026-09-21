@@ -16,6 +16,8 @@ from .filters import AssigneeFilter
 from .models import Backend, BackendIdentity, TaskSummary
 
 DEFAULT_CACHE_DIR = Path("~/.local/state/tasks/cache")
+# Bump when summary fields required for overview change (forces full refetch).
+CACHE_FORMAT_VERSION = 2
 _SCOPE_RE = re.compile(r"^(jira:[A-Z][A-Z0-9_]*|github:[^/:\s]+/[^/:\s]+)$")
 _DETAIL_CAP = 200
 
@@ -131,6 +133,7 @@ def _validate_scope(scope: str) -> None:
 
 def _encode_entry(entry: CacheEntry) -> dict[str, Any]:
     return {
+        "format": CACHE_FORMAT_VERSION,
         "synced_at": entry.synced_at,
         "query": entry.query,
         "assignee": entry.assignee.value,
@@ -142,6 +145,9 @@ def _encode_entry(entry: CacheEntry) -> dict[str, Any]:
 
 
 def _decode_entry(payload: Mapping[str, Any]) -> CacheEntry:
+    format_version = payload.get("format", 0)
+    if not isinstance(format_version, int) or format_version < CACHE_FORMAT_VERSION:
+        raise CacheError("cache entry format is outdated")
     synced_at = payload.get("synced_at")
     if not isinstance(synced_at, str) or not synced_at.strip():
         raise CacheError("cache entry missing synced_at")
@@ -222,6 +228,10 @@ def _encode_summary(task: TaskSummary) -> dict[str, Any]:
         payload["url"] = task.url
     if task.parent is not None:
         payload["parent"] = _encode_identity(task.parent)
+    if task.blocked_by:
+        payload["blocked_by"] = [_encode_identity(item) for item in task.blocked_by]
+    if task.blocks:
+        payload["blocks"] = [_encode_identity(item) for item in task.blocks]
     return payload
 
 
@@ -248,7 +258,23 @@ def _decode_summary(payload: Mapping[str, Any]) -> TaskSummary:
         components=tuple(payload.get("components") or ()),
         url=payload.get("url") if isinstance(payload.get("url"), str) else None,
         parent=parent,
+        blocked_by=_decode_identity_tuple(payload.get("blocked_by")),
+        blocks=_decode_identity_tuple(payload.get("blocks")),
     )
+
+
+def _decode_identity_tuple(value: Any) -> tuple[BackendIdentity, ...]:
+    if not isinstance(value, list):
+        return ()
+    identities: list[BackendIdentity] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        try:
+            identities.append(_decode_identity(item))
+        except CacheError:
+            continue
+    return tuple(identities)
 
 
 def _atomic_write(path: Path, payload: Mapping[str, Any]) -> None:

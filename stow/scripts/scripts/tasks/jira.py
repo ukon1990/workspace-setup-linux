@@ -20,7 +20,7 @@ from .references import jira_identity, parse_jira_references
 _PROJECT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _VERSION_RE = re.compile(r"\d+\.\d+(?:\.\d+)?")
 _LUCENE_RESERVED_RE = re.compile(r'([+\-!(){}\[\]^"~*?:\\/&|])')
-_SEARCH_FIELDS = "key,issuetype,summary,status,assignee,priority,parent"
+_SEARCH_FIELDS = "key,issuetype,summary,status,assignee,priority,parent,issuelinks"
 _DETAIL_FIELDS = (
     "key,issuetype,summary,status,assignee,priority,labels,components,"
     "description,comment,parent,subtasks,issuelinks"
@@ -314,6 +314,7 @@ def _summary(item: Mapping[str, Any], *, fallback_url: Optional[str] = None) -> 
         )
         if isinstance(parent_key, str) and parent_key:
             parent = BackendIdentity.jira(parent_key)
+    blocked_by, blocks = _summary_block_links(fields)
     return TaskSummary(
         identity=BackendIdentity.jira(key, url=url),
         title=_text_value(fields.get("summary")) or "(untitled)",
@@ -325,7 +326,59 @@ def _summary(item: Mapping[str, Any], *, fallback_url: Optional[str] = None) -> 
         components=_named_tuple(fields.get("components")),
         url=url,
         parent=parent,
+        blocked_by=blocked_by,
+        blocks=blocks,
     )
+
+
+def _summary_block_links(
+    fields: Mapping[str, Any],
+) -> Tuple[Tuple[BackendIdentity, ...], Tuple[BackendIdentity, ...]]:
+    blocked_by: list[BackendIdentity] = []
+    blocks: list[BackendIdentity] = []
+    seen_blocked: set[str] = set()
+    seen_blocks: set[str] = set()
+    links = fields.get("issuelinks") or fields.get("issueLinks")
+    if not isinstance(links, list):
+        return (), ()
+    for link in links:
+        if not isinstance(link, dict):
+            continue
+        link_type = link.get("type") if isinstance(link.get("type"), dict) else {}
+        outward = link.get("outwardIssue")
+        inward = link.get("inwardIssue")
+        if isinstance(outward, dict):
+            label = _text_value(link_type.get("outward")) or "relates to"
+            kind = _relationship_kind(label)
+            identity = _link_identity(outward)
+            if identity is not None and kind is RelationshipKind.BLOCKS:
+                if identity.stable_id not in seen_blocks:
+                    seen_blocks.add(identity.stable_id)
+                    blocks.append(identity)
+            elif identity is not None and kind is RelationshipKind.BLOCKED_BY:
+                if identity.stable_id not in seen_blocked:
+                    seen_blocked.add(identity.stable_id)
+                    blocked_by.append(identity)
+        if isinstance(inward, dict):
+            label = _text_value(link_type.get("inward")) or "relates to"
+            kind = _relationship_kind(label)
+            identity = _link_identity(inward)
+            if identity is not None and kind is RelationshipKind.BLOCKS:
+                if identity.stable_id not in seen_blocks:
+                    seen_blocks.add(identity.stable_id)
+                    blocks.append(identity)
+            elif identity is not None and kind is RelationshipKind.BLOCKED_BY:
+                if identity.stable_id not in seen_blocked:
+                    seen_blocked.add(identity.stable_id)
+                    blocked_by.append(identity)
+    return tuple(blocked_by), tuple(blocks)
+
+
+def _link_identity(item: Mapping[str, Any]) -> Optional[BackendIdentity]:
+    key = _item_key(item)
+    if not key:
+        return None
+    return BackendIdentity.jira(key, url=_browse_url(item, key))
 
 
 def _detail(

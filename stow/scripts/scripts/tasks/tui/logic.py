@@ -206,6 +206,29 @@ def is_done(summary: TaskSummary) -> bool:
     return is_done_status(summary.status)
 
 
+def blocked_by_label(task: TaskSummary) -> str:
+    count = len(task.blocked_by)
+    return f"blocked by {count}" if count else "-"
+
+
+def blocks_label(task: TaskSummary) -> str:
+    count = len(task.blocks)
+    return f"blocks {count}" if count else "-"
+
+
+def dependency_suffix(
+    blocked_by: Sequence[BackendIdentity] = (),
+    blocks: Sequence[BackendIdentity] = (),
+) -> str:
+    """Compact tree annotation for blockers / blocking targets."""
+    parts: list[str] = []
+    if blocked_by:
+        parts.append(f"blocked by {len(blocked_by)}")
+    if blocks:
+        parts.append(f"blocks {len(blocks)}")
+    return (" " + " · ".join(parts)) if parts else ""
+
+
 @dataclass
 class HierarchyNode:
     identity: BackendIdentity
@@ -216,6 +239,8 @@ class HierarchyNode:
     total_leaves: int = 0
     is_current: bool = False
     link_label: Optional[str] = None
+    blocked_by: tuple[BackendIdentity, ...] = ()
+    blocks: tuple[BackendIdentity, ...] = ()
 
     @property
     def progress_label(self) -> str:
@@ -226,11 +251,11 @@ class HierarchyNode:
         done = self.done_leaves
         percent = round(100 * done / total) if total else 0
         marker = "★ " if self.is_current else ""
+        deps = dependency_suffix(self.blocked_by, self.blocks)
         return (
             f"[{done}/{total} {percent}%] {marker}"
-            f"{self.identity.display_key} — {self.title}"
+            f"{self.identity.display_key} — {self.title}{deps}"
         )
-
 
 def compute_progress(node: HierarchyNode) -> None:
     """Fill done_leaves/total_leaves bottom-up (link leaves do not contribute)."""
@@ -261,6 +286,8 @@ def _node_from_summary(
         status=summary.status,
         is_current=is_current,
         link_label=link_label,
+        blocked_by=summary.blocked_by,
+        blocks=summary.blocks,
     )
 
 

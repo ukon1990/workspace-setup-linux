@@ -20,11 +20,14 @@ from tasks.tui import (
     TasksController,
     assignee_filter_for_key,
     assignee_filter_text,
+    blocked_by_label,
+    blocks_label,
     build_forest_from_details,
     build_forest_from_summaries,
     build_relationship_hierarchy,
     clip,
     compute_progress,
+    dependency_suffix,
     detail_content_lines,
     expand_hierarchy,
     filter_tasks,
@@ -327,6 +330,26 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(forest[0].identity.key, "30")
         self.assertEqual(forest[0].children[0].identity.key, "31")
         self.assertEqual((forest[0].done_leaves, forest[0].total_leaves), (0, 1))
+
+    def test_dependency_labels_and_tree_suffix(self):
+        blocker = BackendIdentity.github(5, "owner/repo")
+        blocked = BackendIdentity.github(6, "owner/repo")
+        task = summary(
+            40,
+            "Dep",
+            status="Open",
+            blocked_by=(blocker,),
+            blocks=(blocked,),
+        )
+        self.assertEqual(blocked_by_label(task), "blocked by 1")
+        self.assertEqual(blocks_label(task), "blocks 1")
+        self.assertEqual(blocked_by_label(summary(41)), "-")
+        self.assertEqual(blocks_label(summary(41)), "-")
+        self.assertIn("blocked by 1", dependency_suffix(task.blocked_by, task.blocks))
+        self.assertIn("blocks 1", dependency_suffix(task.blocked_by, task.blocks))
+        forest = build_forest_from_summaries([task])
+        self.assertIn("blocked by 1", forest[0].progress_label)
+        self.assertIn("blocks 1", forest[0].progress_label)
 
 
 class ControllerTests(unittest.TestCase):

@@ -34,6 +34,8 @@ from .logic import (
     TasksController,
     assignee_filter_for_key,
     assignee_filter_text,
+    blocked_by_label,
+    blocks_label,
     build_forest_from_summaries,
     build_relationship_hierarchy,
     detail_content_text,
@@ -242,7 +244,16 @@ class ListScreen(Screen):
     def on_mount(self) -> None:
         self.query_one(LoadingIndicator).display = False
         table = self.query_one("#task-table", DataTable)
-        table.add_columns("Key", "Status", "Type", "Priority", "Assignees", "Title")
+        table.add_columns(
+            "Key",
+            "Status",
+            "Type",
+            "Priority",
+            "Assignees",
+            "Title",
+            "Blocked by",
+            "Blocks",
+        )
         tree = self.query_one("#task-tree", Tree)
         tree.display = False
         tree.show_root = False
@@ -317,6 +328,8 @@ class ListScreen(Screen):
                 task.priority or "-",
                 ", ".join(task.assignees) or "-",
                 task.title,
+                blocked_by_label(task),
+                blocks_label(task),
                 key=task.identity.stable_id,
             )
         index = min(max(self.state.index, 0), len(tasks) - 1)

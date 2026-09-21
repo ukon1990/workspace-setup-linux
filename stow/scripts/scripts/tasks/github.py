@@ -15,7 +15,10 @@ from .models import (
 from .process import ProcessError, ProcessErrorKind, run_json, run_text
 from .references import github_identity, parse_github_references
 
-_LIST_FIELDS = "number,title,state,stateReason,assignees,labels,url,issueType,parent"
+_LIST_FIELDS = (
+    "number,title,state,stateReason,assignees,labels,url,issueType,parent,"
+    "blockedBy,blocking"
+)
 _DETAIL_FIELDS = (
     "number,title,state,stateReason,assignees,labels,url,body,comments,"
     "parent,subIssues,blockedBy,blocking,issueType"
@@ -241,7 +244,21 @@ def _normalize_summary(payload: Any, repository: str) -> TaskSummary:
         labels=_names(issue.get("labels")),
         url=url,
         parent=parent,
+        blocked_by=_related_identities(issue.get("blockedBy"), repository),
+        blocks=_related_identities(issue.get("blocking"), repository),
     )
+
+
+def _related_identities(value: Any, repository: str) -> Tuple[BackendIdentity, ...]:
+    identities: List[BackendIdentity] = []
+    seen: set[str] = set()
+    for item in _items(value):
+        identity = _related_identity(_mapping(item, "GitHub issue relationship"), repository)
+        if identity is None or identity.stable_id in seen:
+            continue
+        seen.add(identity.stable_id)
+        identities.append(identity)
+    return tuple(identities)
 
 
 def _normalize_detail(payload: Mapping[str, Any], repository: str) -> TaskDetail:

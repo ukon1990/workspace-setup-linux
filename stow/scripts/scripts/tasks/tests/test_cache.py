@@ -21,12 +21,14 @@ from tasks.models import BackendIdentity, TaskSummary
 from tasks.tui import TasksController
 
 
-def _summary(number, title="Task", status="Open", parent=None):
+def _summary(number, title="Task", status="Open", parent=None, blocked_by=(), blocks=()):
     return TaskSummary(
         BackendIdentity.github(number, "acme/app"),
         title,
         status,
         parent=parent,
+        blocked_by=tuple(blocked_by),
+        blocks=tuple(blocks),
     )
 
 
@@ -50,7 +52,13 @@ class CacheRoundTripTests(unittest.TestCase):
             self.assertEqual(loaded.items[first.identity.stable_id].title, "Alpha")
 
             updated = _summary(1, "Alpha edited", status="Closed")
-            child = _summary(2, "Child", parent=first.identity)
+            child = _summary(
+                2,
+                "Child",
+                parent=first.identity,
+                blocked_by=(first.identity,),
+                blocks=(BackendIdentity.github(9, "acme/app"),),
+            )
             loaded.merge_items([updated, child])
             loaded.synced_at = utc_now_iso()
             save_entry(scope, loaded, cache_dir=cache_dir)
@@ -58,7 +66,28 @@ class CacheRoundTripTests(unittest.TestCase):
             again = load_entry(scope, None, AssigneeFilter.ALL, cache_dir=cache_dir)
             self.assertEqual(again.items[first.identity.stable_id].status, "Closed")
             self.assertEqual(again.items[child.identity.stable_id].parent, first.identity)
+            self.assertEqual(
+                again.items[child.identity.stable_id].blocked_by[0].key,
+                "1",
+            )
+            self.assertEqual(again.items[child.identity.stable_id].blocks[0].key, "9")
             self.assertNotEqual(again.synced_at, "2026-09-21T10:00:00+00:00")
+
+    def test_outdated_format_is_ignored(self):
+        with TemporaryDirectory() as directory:
+            scope = "github:acme/app"
+            cache_dir = Path(directory)
+            entry = CacheEntry(
+                synced_at="2026-09-21T10:00:00+00:00",
+                query=None,
+                assignee=AssigneeFilter.ALL,
+            )
+            entry.replace_items([_summary(1, "Alpha")])
+            save_entry(scope, entry, cache_dir=cache_dir)
+            path = cache_dir / "github-acme-app.yaml"
+            raw = path.read_text(encoding="utf-8")
+            path.write_text(raw.replace("format: 2", "format: 1"), encoding="utf-8")
+            self.assertIsNone(load_entry(scope, None, AssigneeFilter.ALL, cache_dir=cache_dir))
 
     def test_format_since_helpers(self):
         self.assertEqual(format_github_since("2026-09-21T18:30:00+00:00"), "2026-09-21")
@@ -121,12 +150,36 @@ class GithubParentListTests(unittest.TestCase):
                     "title": "Parent",
                     "url": "https://github.com/acme/app/issues/2",
                 },
+                "blockedBy": {
+                    "nodes": [
+                        {
+                            "number": 5,
+                            "title": "Blocker",
+                            "url": "https://github.com/acme/app/issues/5",
+                        }
+                    ],
+                    "totalCount": 1,
+                },
+                "blocking": {
+                    "nodes": [
+                        {
+                            "number": 6,
+                            "title": "Blocked",
+                            "url": "https://github.com/acme/app/issues/6",
+                        }
+                    ],
+                    "totalCount": 1,
+                },
             }
         ]
         issues = GithubBackend("acme/app").list_issues()
         self.assertEqual(issues[0].parent.key, "2")
+        self.assertEqual([item.key for item in issues[0].blocked_by], ["5"])
+        self.assertEqual([item.key for item in issues[0].blocks], ["6"])
         fields = run_json.call_args.args[0][run_json.call_args.args[0].index("--json") + 1]
         self.assertIn("parent", fields.split(","))
+        self.assertIn("blockedBy", fields.split(","))
+        self.assertIn("blocking", fields.split(","))
 
     @patch("tasks.github.run_json", return_value=[])
     def test_delta_list_uses_updated_and_all_state(self, run_json):

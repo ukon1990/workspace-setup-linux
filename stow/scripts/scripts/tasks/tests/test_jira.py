@@ -96,7 +96,7 @@ class JiraQueryTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--limit") + 1], "25")
         self.assertEqual(
             argv[argv.index("--fields") + 1],
-            "key,issuetype,summary,status,assignee,priority,parent",
+            "key,issuetype,summary,status,assignee,priority,parent,issuelinks",
         )
 
     @patch("tasks.jira.run_json", return_value=[])
@@ -234,6 +234,28 @@ class JiraNormalizationTests(unittest.TestCase):
                         "assignee": {"displayName": "Ada"},
                         "labels": ["cli", "ready"],
                         "components": [{"name": "Platform"}],
+                        "issuelinks": [
+                            {
+                                "type": {
+                                    "outward": "blocks",
+                                    "inward": "is blocked by",
+                                },
+                                "outwardIssue": {
+                                    "key": "PROJ-4",
+                                    "fields": {"summary": "Blocked task"},
+                                },
+                            },
+                            {
+                                "type": {
+                                    "outward": "blocks",
+                                    "inward": "is blocked by",
+                                },
+                                "inwardIssue": {
+                                    "key": "PROJ-5",
+                                    "fields": {"summary": "Blocker"},
+                                },
+                            },
+                        ],
                     },
                 }
             ]
@@ -252,6 +274,8 @@ class JiraNormalizationTests(unittest.TestCase):
         self.assertEqual(task.labels, ("cli", "ready"))
         self.assertEqual(task.components, ("Platform",))
         self.assertEqual(task.url, "https://jira.example/browse/PROJ-2")
+        self.assertEqual([item.key for item in task.blocked_by], ["PROJ-5"])
+        self.assertEqual([item.key for item in task.blocks], ["PROJ-4"])
 
     @patch("tasks.jira.run_json")
     def test_direct_url_lookup_normalizes_full_detail_and_relations(self, run):
