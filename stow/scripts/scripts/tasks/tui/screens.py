@@ -81,7 +81,11 @@ def _mount_hierarchy(
     expand: bool = True,
 ) -> None:
     for node in nodes:
-        tree_node = parent.add(node.progress_label, data=node.identity)
+        tree_node = parent.add(
+            node.progress_label,
+            data=node.identity,
+            allow_expand=bool(node.children),
+        )
         if node.children:
             _mount_hierarchy(tree_node, node.children, expand=expand)
             if expand:
@@ -242,6 +246,7 @@ class ListScreen(Screen):
         tree = self.query_one("#task-tree", Tree)
         tree.display = False
         tree.show_root = False
+        tree.auto_expand = False
         table.focus()
         self._update_chrome()
         if self._load_on_mount and not self.state.tasks and self.state.error is None:
@@ -441,6 +446,14 @@ class ListScreen(Screen):
             self.state.index = event.cursor_row
         self.action_open_task()
 
+    @on(Tree.NodeSelected)
+    def open_selected_tree_node(self, event: Tree.NodeSelected) -> None:
+        if self._view_mode != "tree":
+            return
+        if event.node.data is None or not isinstance(event.node.data, BackendIdentity):
+            return
+        self.app.push_screen(DetailScreen(self.controller, event.node.data))
+
     def _selected_identity(self) -> Optional[BackendIdentity]:
         if self._view_mode == "tree":
             node = self.query_one("#task-tree", Tree).cursor_node
@@ -584,6 +597,7 @@ class DetailScreen(Screen):
         self.query_one("#relations-pane").border_title = "Relationships"
         tree = self.query_one("#relations-tree", Tree)
         tree.show_root = False
+        tree.auto_expand = False
         self._set_pane_focus(False)
         self.reload_detail(refresh=False)
 
@@ -653,7 +667,7 @@ class DetailScreen(Screen):
         tree = self.query_one("#relations-tree", Tree)
         tree.clear()
         if hierarchy is None:
-            tree.root.add("None")
+            tree.root.add("None", allow_expand=False)
             return
         _mount_hierarchy(tree.root, [hierarchy])
         tree.root.expand()

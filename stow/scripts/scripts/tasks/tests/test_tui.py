@@ -312,6 +312,10 @@ class HelperTests(unittest.TestCase):
         self.assertIn("22", child_keys)
         link = next(node for node in current_node.children if node.link_label)
         self.assertEqual(link.link_label, "blocked by")
+        self.assertEqual(link.identity.key, "23")
+        self.assertEqual(link.title, "Blocker")
+        self.assertFalse(link.children)
+        self.assertIn("blocked by: owner/repo#23", link.progress_label)
         self.assertEqual((hierarchy.done_leaves, hierarchy.total_leaves), (1, 1))
 
     def test_summary_forest_nests_by_parent(self):
