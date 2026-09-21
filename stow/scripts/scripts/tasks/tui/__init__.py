@@ -26,7 +26,9 @@ from .logic import (
     relationship_line,
     selected_task,
     set_filter,
+    sort_tasks,
     task_url,
+    visible_tasks,
     wrap_text,
 )
 
@@ -57,6 +59,8 @@ __all__ = [
     "run",
     "selected_task",
     "set_filter",
+    "sort_tasks",
     "task_url",
+    "visible_tasks",
     "wrap_text",
 ]

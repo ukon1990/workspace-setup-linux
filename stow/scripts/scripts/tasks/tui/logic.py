@@ -69,6 +69,8 @@ class ListState:
     filter_text: str = ""
     index: int = 0
     error: Optional[str] = None
+    sort_column: Optional[str] = None
+    sort_reverse: bool = False
 
 
 def clip(text: str, width: int) -> str:
@@ -122,6 +124,63 @@ def filter_tasks(tasks: Sequence[TaskSummary], value: str) -> list[TaskSummary]:
     ]
 
 
+TABLE_SORT_COLUMNS = (
+    "key",
+    "status",
+    "type",
+    "priority",
+    "assignees",
+    "title",
+    "blocked_by",
+    "blocks",
+)
+
+
+def _sort_value(task: TaskSummary, column: str):
+    if column == "key":
+        return task.display_key.casefold()
+    if column == "status":
+        return task.status.casefold()
+    if column == "type":
+        return (task.task_type or "").casefold()
+    if column == "priority":
+        return (task.priority or "").casefold()
+    if column == "assignees":
+        return ", ".join(task.assignees).casefold()
+    if column == "title":
+        return task.title.casefold()
+    if column == "blocked_by":
+        return len(task.blocked_by)
+    if column == "blocks":
+        return len(task.blocks)
+    return task.identity.stable_id
+
+
+def sort_tasks(
+    tasks: Sequence[TaskSummary],
+    column: Optional[str] = None,
+    reverse: bool = False,
+) -> list[TaskSummary]:
+    """Order tasks for the overview table; unknown/None column keeps input order."""
+    items = list(tasks)
+    if not column or column not in TABLE_SORT_COLUMNS:
+        return items
+    return sorted(
+        items,
+        key=lambda task: (_sort_value(task, column), task.identity.stable_id),
+        reverse=reverse,
+    )
+
+
+def visible_tasks(state: ListState) -> list[TaskSummary]:
+    """Filtered overview rows in the active table sort order."""
+    return sort_tasks(
+        filter_tasks(state.tasks, state.filter_text),
+        state.sort_column,
+        state.sort_reverse,
+    )
+
+
 def assignee_filter_text(value: AssigneeFilter) -> str:
     return {
         AssigneeFilter.ALL: "all",
@@ -159,7 +218,7 @@ def set_filter(state: ListState, value: str) -> None:
 
 
 def selected_task(state: ListState) -> Optional[TaskSummary]:
-    tasks = filter_tasks(state.tasks, state.filter_text)
+    tasks = visible_tasks(state)
     if not tasks:
         return None
     state.index = min(max(state.index, 0), len(tasks) - 1)

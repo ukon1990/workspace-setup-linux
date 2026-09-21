@@ -36,7 +36,9 @@ from tasks.tui import (
     relationship_line,
     selected_task,
     set_filter,
+    sort_tasks,
     task_url,
+    visible_tasks,
     wrap_text,
 )
 
@@ -138,6 +140,38 @@ class HelperTests(unittest.TestCase):
         set_filter(state, "Task")
         self.assertEqual(state.index, 0)
         self.assertEqual(selected_task(state).identity.key, "1")
+
+    def test_sort_tasks_by_dependency_counts_and_title(self):
+        a = summary(1, "bravo", blocked_by=(), blocks=(BackendIdentity.github(9, "owner/repo"),))
+        b = summary(
+            2,
+            "Alpha",
+            blocked_by=(
+                BackendIdentity.github(3, "owner/repo"),
+                BackendIdentity.github(4, "owner/repo"),
+            ),
+        )
+        c = summary(3, "charlie")
+        tasks = [a, b, c]
+        by_blocked = sort_tasks(tasks, "blocked_by")
+        self.assertEqual([task.identity.key for task in by_blocked], ["1", "3", "2"])
+        by_blocks = sort_tasks(tasks, "blocks", reverse=True)
+        self.assertEqual([task.identity.key for task in by_blocks], ["1", "3", "2"])
+        by_title = sort_tasks(tasks, "title")
+        self.assertEqual([task.identity.key for task in by_title], ["2", "1", "3"])
+        self.assertEqual(sort_tasks(tasks, None), tasks)
+
+    def test_visible_tasks_uses_state_sort(self):
+        state = ListState(
+            [
+                summary(1, "b"),
+                summary(2, "a"),
+            ],
+            sort_column="title",
+        )
+        self.assertEqual([task.identity.key for task in visible_tasks(state)], ["2", "1"])
+        state.index = 0
+        self.assertEqual(selected_task(state).identity.key, "2")
 
     def test_detail_text_and_relationship_keep_directional_labels(self):
         relation = TaskRelationship(

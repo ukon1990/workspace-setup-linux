@@ -29,6 +29,7 @@ from ..filters import AssigneeFilter
 from ..models import BackendIdentity, TaskDetail
 from .logic import (
     ASSIGNEE_FILTER_OPTIONS,
+    TABLE_SORT_COLUMNS,
     HierarchyNode,
     ListState,
     TasksController,
@@ -43,6 +44,7 @@ from .logic import (
     selected_task,
     set_filter,
     task_url,
+    visible_tasks,
 )
 
 HELP_MARKDOWN = """\
@@ -245,14 +247,14 @@ class ListScreen(Screen):
         self.query_one(LoadingIndicator).display = False
         table = self.query_one("#task-table", DataTable)
         table.add_columns(
-            "Key",
-            "Status",
-            "Type",
-            "Priority",
-            "Assignees",
-            "Title",
-            "Blocked by",
-            "Blocks",
+            ("Key", "key"),
+            ("Status", "status"),
+            ("Type", "type"),
+            ("Priority", "priority"),
+            ("Assignees", "assignees"),
+            ("Title", "title"),
+            ("Blocked by", "blocked_by"),
+            ("Blocks", "blocks"),
         )
         tree = self.query_one("#task-tree", Tree)
         tree.display = False
@@ -297,13 +299,17 @@ class ListScreen(Screen):
         else:
             self._populate_table()
 
-    def _populate_table(self) -> None:
+    def _populate_table(self, keep_identity: Optional[str] = None) -> None:
         table = self.query_one("#task-table", DataTable)
         tree = self.query_one("#task-tree", Tree)
         empty = self.query_one("#empty-message", Static)
         tree.display = False
         table.clear()
-        tasks = filter_tasks(self.state.tasks, self.state.filter_text)
+        if keep_identity is None:
+            current = selected_task(self.state)
+            if current is not None:
+                keep_identity = current.identity.stable_id
+        tasks = visible_tasks(self.state)
         if self.state.error:
             table.display = False
             empty.display = True
@@ -332,10 +338,34 @@ class ListScreen(Screen):
                 blocks_label(task),
                 key=task.identity.stable_id,
             )
-        index = min(max(self.state.index, 0), len(tasks) - 1)
+        index = 0
+        if keep_identity is not None:
+            for offset, task in enumerate(tasks):
+                if task.identity.stable_id == keep_identity:
+                    index = offset
+                    break
+        else:
+            index = min(max(self.state.index, 0), len(tasks) - 1)
         self.state.index = index
         table.move_cursor(row=index)
         table.focus()
+
+    @on(DataTable.HeaderSelected)
+    def sort_by_header(self, event: DataTable.HeaderSelected) -> None:
+        if self._view_mode != "table":
+            return
+        column = event.column_key.value
+        if not isinstance(column, str) or column not in TABLE_SORT_COLUMNS:
+            return
+        current = selected_task(self.state)
+        keep_identity = current.identity.stable_id if current else None
+        if self.state.sort_column == column:
+            self.state.sort_reverse = not self.state.sort_reverse
+        else:
+            self.state.sort_column = column
+            self.state.sort_reverse = False
+        self._populate_table(keep_identity=keep_identity)
+        self._update_chrome()
 
     def _populate_tree(self) -> None:
         table = self.query_one("#task-table", DataTable)
