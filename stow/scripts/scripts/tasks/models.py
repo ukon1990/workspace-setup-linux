@@ -118,6 +118,49 @@ class CiCheck:
 
 
 @dataclass(frozen=True)
+class ReviewComment:
+    """A GitHub pull-request review comment anchored to a diff line."""
+
+    id: int
+    path: str
+    body: str
+    author: str = ""
+    side: str = "RIGHT"
+    line: Optional[int] = None
+    start_line: Optional[int] = None
+    original_line: Optional[int] = None
+    original_start_line: Optional[int] = None
+    diff_hunk: str = ""
+    created_at: Optional[str] = None
+    url: Optional[str] = None
+    in_reply_to_id: Optional[int] = None
+
+    @property
+    def anchor_line(self) -> Optional[int]:
+        return self.line if self.line is not None else self.original_line
+
+    @property
+    def range_start(self) -> Optional[int]:
+        if self.start_line is not None:
+            return self.start_line
+        if self.original_start_line is not None:
+            return self.original_start_line
+        return self.anchor_line
+
+    @property
+    def range_end(self) -> Optional[int]:
+        return self.anchor_line
+
+    def covers_line(self, number: int) -> bool:
+        start = self.range_start
+        end = self.range_end
+        if start is None or end is None:
+            return False
+        low, high = (start, end) if start <= end else (end, start)
+        return low <= number <= high
+
+
+@dataclass(frozen=True)
 class PullSummary:
     repository: str
     number: int
@@ -147,6 +190,7 @@ class PullDetail:
     comments: Tuple[Comment, ...] = field(default_factory=tuple)
     checks: Tuple[CiCheck, ...] = field(default_factory=tuple)
     diff: str = ""
+    review_comments: Tuple[ReviewComment, ...] = field(default_factory=tuple)
 
     @property
     def stable_id(self) -> str:

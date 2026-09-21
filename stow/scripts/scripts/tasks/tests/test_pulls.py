@@ -5,14 +5,25 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from tasks.models import CiState, Comment, PullDetail, PullSummary
+from tasks.models import CiState, Comment, PullDetail, PullSummary, ReviewComment
 from tasks.pulls import (
     GithubPullsBackend,
     _normalize_summary,
     _rollup_ci,
+    comments_for_path,
+    format_review_comments,
     format_unified_diff,
+    group_review_threads,
     resolve_github_repository,
+    review_comment_markers,
+    review_comments_by_anchor,
     split_diff_by_file,
+)
+from tasks.review_views import (
+    file_view_status,
+    hunk_fingerprint,
+    load_viewed_files,
+    mark_file_viewed,
 )
 from tasks.tui.pulls import (
     PullListState,
@@ -240,6 +251,116 @@ index 111..222 100644
         self.assertEqual(format_unified_diff("").plain, "(empty diff)")
         headers_only = "diff --git a/x b/x\n--- a/x\n+++ b/x\n"
         self.assertEqual(format_unified_diff(headers_only).plain, "(no hunks)")
+
+    def test_format_unified_diff_marks_comment_lines(self):
+        patch = """\
+@@ -1,2 +1,2 @@
+ context
+-old
++new
+"""
+        comments = (
+            ReviewComment(
+                id=1,
+                path="demo.py",
+                body="Please rename",
+                author="alice",
+                side="RIGHT",
+                line=2,
+                start_line=1,
+            ),
+            ReviewComment(
+                id=2,
+                path="demo.py",
+                body="Agreed",
+                author="bob",
+                side="RIGHT",
+                line=2,
+                start_line=1,
+                in_reply_to_id=1,
+            ),
+        )
+        anchored = review_comments_by_anchor(comments, "demo.py")
+        rendered = format_unified_diff(
+            patch,
+            line_markers=review_comment_markers(comments, "demo.py"),
+            comments_by_anchor=anchored,
+        )
+        plain = rendered.plain
+        self.assertIn("●2", plain)
+        self.assertIn("┃", plain)  # multi-line range mark on start line
+        self.assertIn("RIGHT:1–2", plain)
+        self.assertIn("alice", plain)
+        self.assertIn("Please rename", plain)
+        self.assertIn("bob", plain)
+        self.assertIn("(reply)", plain)
+        self.assertIn("Agreed", plain)
+
+
+class ReviewCommentTests(unittest.TestCase):
+    def test_list_review_comments_command_and_normalize(self):
+        backend = GithubPullsBackend("acme/app")
+        payload = [
+            {
+                "id": 9,
+                "path": "src/a.py",
+                "body": "nit",
+                "user": {"login": "bob"},
+                "side": "RIGHT",
+                "line": 12,
+                "start_line": 10,
+                "created_at": "2026-01-02T03:04:05Z",
+                "html_url": "https://example.test/c/9",
+            }
+        ]
+        with patch("tasks.pulls.run_json", return_value=payload) as run_json:
+            comments = backend.list_review_comments(3)
+            command = run_json.call_args.args[0]
+            self.assertEqual(command[:3], ["gh", "api", "repos/acme/app/pulls/3/comments"])
+            self.assertIn("--paginate", command)
+        self.assertEqual(len(comments), 1)
+        self.assertEqual(comments[0].path, "src/a.py")
+        self.assertEqual(comments[0].anchor_line, 12)
+        self.assertEqual(comments_for_path(comments, "src/a.py")[0].author, "bob")
+        self.assertEqual(review_comment_markers(comments, "src/a.py"), {("RIGHT", 12): 1})
+        self.assertIn("nit", format_review_comments(comments))
+
+    def test_group_review_threads(self):
+        comments = (
+            ReviewComment(id=1, path="a.py", body="root", author="a", line=3),
+            ReviewComment(
+                id=2, path="a.py", body="reply", author="b", line=3, in_reply_to_id=1
+            ),
+            ReviewComment(id=3, path="a.py", body="other", author="c", line=9),
+        )
+        threads = group_review_threads(comments)
+        self.assertEqual(len(threads), 2)
+        self.assertEqual([c.id for c in threads[0]], [1, 2])
+        text = format_review_comments(comments)
+        self.assertIn("(reply)", text)
+        self.assertIn("other", text)
+
+
+class ReviewViewsTests(unittest.TestCase):
+    def test_mark_viewed_and_stale(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "views.yaml"
+            pull_id = "github-pr:acme/app:7"
+            fingerprint = hunk_fingerprint("diff body")
+            self.assertEqual(
+                file_view_status(pull_id, "a.py", fingerprint, path=path), "new"
+            )
+            mark_file_viewed(pull_id, "a.py", fingerprint, path=path)
+            self.assertEqual(
+                file_view_status(pull_id, "a.py", fingerprint, path=path), "viewed"
+            )
+            self.assertEqual(
+                file_view_status(pull_id, "a.py", "other", path=path), "stale"
+            )
+            self.assertEqual(load_viewed_files(pull_id, path=path)["a.py"], fingerprint)
 
 
 class PullListHelperTests(unittest.TestCase):

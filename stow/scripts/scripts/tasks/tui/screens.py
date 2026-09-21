@@ -59,11 +59,16 @@ from .pulls import (
 )
 from ..pulls import (
     DiffFile,
+    comments_for_path,
     format_line_counts,
+    format_review_comments,
     format_unified_diff,
+    review_comment_markers,
+    review_comments_by_anchor,
     split_diff_by_file,
     summarize_diff_files,
 )
+from ..review_views import file_view_status, hunk_fingerprint, mark_file_viewed
 
 HELP_MARKDOWN = """\
 # Tasks help
@@ -84,6 +89,8 @@ HELP_MARKDOWN = """\
 | `R` | Full reload (replace cache) |
 | `Tab` | Cycle focus within current PR tab |
 | `x` | Toggle hiding generated/excluded files |
+| `l` | Mark current file as looked at |
+| `m` | Open all review comments for current file |
 | `o` | Open URL |
 | `?` | This help |
 | `h` / `Backspace` / `Esc` | Back |
@@ -209,6 +216,30 @@ class HelpScreen(ModalScreen[None]):
     def compose(self) -> ComposeResult:
         with Vertical(classes="modal-box"):
             yield Markdown(HELP_MARKDOWN, id="help-body")
+            yield Label("Press Esc to close")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class ReviewCommentsModal(ModalScreen[None]):
+    """Read-only review comments for one file."""
+
+    BINDINGS = [
+        Binding("escape", "close", "Close", show=True),
+        Binding("q", "close", "Close", show=False),
+    ]
+
+    def __init__(self, title: str, body: str) -> None:
+        super().__init__()
+        self._title = title
+        self._body = body
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="modal-box", id="review-comments-modal"):
+            yield Label(self._title)
+            with VerticalScroll(id="review-comments-body"):
+                yield Markdown(self._body)
             yield Label("Press Esc to close")
 
     def action_close(self) -> None:
@@ -1098,6 +1129,8 @@ class PullDetailScreen(Screen):
         Binding("k", "move_up", "Up", show=False),
         Binding("tab", "toggle_focus", "Focus", show=True),
         Binding("x", "toggle_excluded", "Excl", show=True),
+        Binding("l", "mark_looked", "Looked", show=True),
+        Binding("m", "show_comments", "Comments", show=True),
         Binding("r", "refresh", "Refresh", show=True),
         Binding("o", "open_url", "Open URL", show=True),
         Binding("question_mark", "help", "Help", show=True),
@@ -1334,6 +1367,27 @@ class PullDetailScreen(Screen):
             return list(self._file_diffs)
         return [item for item in self._file_diffs if not item.excluded]
 
+    def _review_comments(self) -> tuple:
+        if self.detail is None:
+            return ()
+        return self.detail.review_comments
+
+    def _file_option_label(self, item: DiffFile) -> str:
+        counts = format_line_counts(item.added, item.deleted)
+        parts = [counts]
+        status = file_view_status(
+            self.pull.stable_id, item.path, hunk_fingerprint(item.hunk)
+        )
+        if status == "viewed":
+            parts.append("✓")
+        elif status == "stale":
+            parts.append("↻")
+        comment_n = len(comments_for_path(self._review_comments(), item.path))
+        if comment_n:
+            parts.append(f"●{comment_n}")
+        marker = " [gen]" if item.excluded else ""
+        return f"{' '.join(parts)}  {item.label}{marker}"
+
     def _apply_file_diffs(self) -> None:
         files = self.query_one("#file-list", OptionList)
         visible = self._visible_files()
@@ -1351,13 +1405,10 @@ class PullDetailScreen(Screen):
                 )
                 self.query_one("#diff-pane").border_title = "Diff"
                 return
-            options = []
-            for index, item in enumerate(visible):
-                counts = format_line_counts(item.added, item.deleted)
-                marker = " [gen]" if item.excluded else ""
-                options.append(
-                    Option(f"{counts}  {item.label}{marker}", id=f"file-{index}")
-                )
+            options = [
+                Option(self._file_option_label(item), id=f"file-{index}")
+                for index, item in enumerate(visible)
+            ]
             files.set_options(options)
             self._file_index = min(max(self._file_index, 0), len(visible) - 1)
             files.highlighted = self._file_index
@@ -1372,10 +1423,25 @@ class PullDetailScreen(Screen):
         index = min(max(self._file_index, 0), len(visible) - 1)
         self._file_index = index
         item = visible[index]
+        comment_n = len(comments_for_path(self._review_comments(), item.path))
+        status = file_view_status(
+            self.pull.stable_id, item.path, hunk_fingerprint(item.hunk)
+        )
+        status_note = {"viewed": " · looked", "stale": " · stale", "new": ""}.get(
+            status, ""
+        )
+        comment_note = f" · ●{comment_n}" if comment_n else ""
         self.query_one("#diff-pane").border_title = (
             f"Diff · {item.label} · {format_line_counts(item.added, item.deleted)}"
+            f"{comment_note}{status_note}"
         )
-        self.query_one("#diff-body", Static).update(format_unified_diff(item.hunk))
+        markers = review_comment_markers(self._review_comments(), item.path)
+        anchored = review_comments_by_anchor(self._review_comments(), item.path)
+        self.query_one("#diff-body", Static).update(
+            format_unified_diff(
+                item.hunk, line_markers=markers, comments_by_anchor=anchored
+            )
+        )
 
     @staticmethod
     def _event_option_index(event) -> Optional[int]:
@@ -1434,6 +1500,36 @@ class PullDetailScreen(Screen):
         if self._diff_loaded:
             self._apply_file_diffs()
         self._update_status()
+
+    def action_mark_looked(self) -> None:
+        if self._active_tab != "files" or not self._diff_loaded:
+            self.notify("Open the Files tab first", severity="warning")
+            return
+        visible = self._visible_files()
+        if not visible:
+            return
+        item = visible[min(max(self._file_index, 0), len(visible) - 1)]
+        mark_file_viewed(
+            self.pull.stable_id, item.path, hunk_fingerprint(item.hunk)
+        )
+        self._apply_file_diffs()
+        self.notify(f"Marked looked: {item.label}")
+
+    def action_show_comments(self) -> None:
+        if self._active_tab != "files" or not self._diff_loaded:
+            self.notify("Open the Files tab first", severity="warning")
+            return
+        visible = self._visible_files()
+        if not visible:
+            return
+        item = visible[min(max(self._file_index, 0), len(visible) - 1)]
+        comments = comments_for_path(self._review_comments(), item.path)
+        self.app.push_screen(
+            ReviewCommentsModal(
+                f"Review comments · {item.label}",
+                format_review_comments(comments),
+            )
+        )
 
     def action_move_down(self) -> None:
         if self._active_tab == "description":

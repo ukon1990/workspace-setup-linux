@@ -206,3 +206,16 @@ InputModal, AssigneeFilterModal, HelpScreen {
     height: auto;
     max-height: 12;
 }
+
+#review-comments-modal {
+    width: 80;
+    max-width: 95%;
+    height: auto;
+    max-height: 80%;
+}
+
+#review-comments-body {
+    height: auto;
+    max-height: 30;
+    margin: 1 0;
+}

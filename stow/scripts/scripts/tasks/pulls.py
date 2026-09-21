@@ -10,7 +10,7 @@ from typing import Any, Iterable, List, Mapping, Optional, Sequence, Tuple, Unio
 from rich.text import Text
 
 from .filters import AssigneeFilter
-from .models import CiCheck, CiState, Comment, PullDetail, PullSummary
+from .models import CiCheck, CiState, Comment, PullDetail, PullSummary, ReviewComment
 from .process import ProcessError, ProcessErrorKind, run_json, run_text
 
 _LIST_FIELDS = (
@@ -193,15 +193,36 @@ _SKIP_DIFF_PREFIXES = (
 )
 
 
-def format_unified_diff(hunk: str) -> Text:
+def format_unified_diff(
+    hunk: str,
+    *,
+    line_markers: Optional[Mapping[Tuple[str, int], int]] = None,
+    comments_by_anchor: Optional[Mapping[Tuple[str, int], Sequence[ReviewComment]]] = None,
+) -> Text:
     """Render a file hunk as a unified diff with dual line-number gutters."""
     if not hunk or not hunk.strip():
         return Text("(empty diff)", style="dim")
 
+    markers = line_markers or {}
+    anchored = comments_by_anchor or {}
+    range_lines = _range_line_marks(anchored)
     rows: list[Text] = []
     old_line = 0
     new_line = 0
     started = False
+
+    def _append_marker(row: Text, side: str, number: int) -> None:
+        count = markers.get((side, number), 0)
+        if count:
+            row.append(f"  ●{count}", style="bold yellow")
+        elif (side, number) in range_lines:
+            row.append("  ┃", style="yellow")
+
+    def _flush_comments(side: str, number: int) -> None:
+        comments = anchored.get((side, number))
+        if not comments:
+            return
+        rows.extend(_inline_comment_rows(comments))
 
     for raw in hunk.splitlines():
         if raw.startswith(_SKIP_DIFF_PREFIXES):
@@ -230,7 +251,9 @@ def format_unified_diff(hunk: str) -> Text:
             row.append(f"{new_line:>4} ", style="#81c995")
             row.append("│ ", style="dim")
             row.append(raw, style="#81c995 on #1b3329")
+            _append_marker(row, "RIGHT", new_line)
             rows.append(row)
+            _flush_comments("RIGHT", new_line)
             new_line += 1
             continue
         if raw.startswith("-"):
@@ -239,17 +262,20 @@ def format_unified_diff(hunk: str) -> Text:
             row.append(f"{'':>4} ", style="dim")
             row.append("│ ", style="dim")
             row.append(raw, style="#f28b82 on #3b2220")
+            _append_marker(row, "LEFT", old_line)
             rows.append(row)
+            _flush_comments("LEFT", old_line)
             old_line += 1
             continue
-        # Context line (leading space) or bare content after hunk start.
         display = raw if raw.startswith(" ") else f" {raw}"
         row = Text()
         row.append(f"{old_line:>4} ", style="dim")
         row.append(f"{new_line:>4} ", style="dim")
         row.append("│ ", style="dim")
         row.append(display, style="#e8eaed")
+        _append_marker(row, "RIGHT", new_line)
         rows.append(row)
+        _flush_comments("RIGHT", new_line)
         old_line += 1
         new_line += 1
 
@@ -262,6 +288,169 @@ def format_unified_diff(hunk: str) -> Text:
             result.append("\n")
         result.append_text(row)
     return result
+
+
+def review_comment_markers(
+    comments: Sequence[ReviewComment], path: str
+) -> dict[Tuple[str, int], int]:
+    """Count comments whose end line is at each (side, line) — where bodies expand."""
+    counts: dict[Tuple[str, int], int] = {}
+    for comment in comments:
+        if comment.path != path:
+            continue
+        line = comment.range_end
+        if line is None:
+            continue
+        side = (comment.side or "RIGHT").upper()
+        if side not in {"LEFT", "RIGHT"}:
+            side = "RIGHT"
+        key = (side, line)
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def review_comments_by_anchor(
+    comments: Sequence[ReviewComment], path: str
+) -> dict[Tuple[str, int], tuple[ReviewComment, ...]]:
+    """Map end-line anchors to comments (bodies render under the end line)."""
+    grouped: dict[Tuple[str, int], list[ReviewComment]] = {}
+    for comment in comments_for_path(comments, path):
+        line = comment.range_end
+        if line is None:
+            continue
+        side = (comment.side or "RIGHT").upper()
+        if side not in {"LEFT", "RIGHT"}:
+            side = "RIGHT"
+        grouped.setdefault((side, line), []).append(comment)
+    return {key: tuple(value) for key, value in grouped.items()}
+
+
+def _range_line_marks(
+    anchored: Mapping[Tuple[str, int], Sequence[ReviewComment]],
+) -> set[Tuple[str, int]]:
+    """Lines covered by a multi-line comment but not the end anchor."""
+    marks: set[Tuple[str, int]] = set()
+    for comments in anchored.values():
+        for comment in comments:
+            start = comment.range_start
+            end = comment.range_end
+            if start is None or end is None or start == end:
+                continue
+            side = (comment.side or "RIGHT").upper()
+            if side not in {"LEFT", "RIGHT"}:
+                side = "RIGHT"
+            low, high = (start, end) if start <= end else (end, start)
+            for number in range(low, high):
+                marks.add((side, number))
+    return marks
+
+
+def comments_for_path(
+    comments: Sequence[ReviewComment], path: str
+) -> tuple[ReviewComment, ...]:
+    return tuple(comment for comment in comments if comment.path == path)
+
+
+def group_review_threads(
+    comments: Sequence[ReviewComment],
+) -> list[tuple[ReviewComment, ...]]:
+    """Group comments into threads using ``in_reply_to_id``."""
+    by_id = {comment.id: comment for comment in comments if comment.id}
+    children: dict[int, list[ReviewComment]] = {}
+    roots: list[ReviewComment] = []
+    for comment in comments:
+        parent = comment.in_reply_to_id
+        if parent and parent in by_id:
+            children.setdefault(parent, []).append(comment)
+        else:
+            roots.append(comment)
+    threads: list[tuple[ReviewComment, ...]] = []
+    for root in roots:
+        thread = [root]
+        queue = list(children.get(root.id, ()))
+        while queue:
+            reply = queue.pop(0)
+            thread.append(reply)
+            queue.extend(children.get(reply.id, ()))
+        threads.append(tuple(thread))
+    return threads
+
+
+def _comment_location(comment: ReviewComment) -> str:
+    where = comment.side or "RIGHT"
+    start = comment.range_start
+    end = comment.range_end
+    if start is None and end is None:
+        return where
+    if start is None or end is None or start == end:
+        return f"{where}:{end or start}"
+    low, high = (start, end) if start <= end else (end, start)
+    return f"{where}:{low}–{high}"
+
+
+def format_review_comments(comments: Sequence[ReviewComment]) -> str:
+    if not comments:
+        return "No review comments on this file."
+    blocks: list[str] = []
+    for thread in group_review_threads(comments):
+        for depth, comment in enumerate(thread):
+            loc = _comment_location(comment)
+            prefix = "#### " if depth else "### "
+            who = comment.author or "unknown"
+            heading = f"{prefix}{who}"
+            if depth:
+                heading += " (reply)"
+            else:
+                heading += f" · `{comment.path}` · {loc}"
+            if comment.created_at:
+                heading += f" · {comment.created_at}"
+            indent = "  " * min(depth, 3)
+            body = comment.body or "(empty)"
+            body_lines = "\n".join(f"{indent}{part}" for part in body.splitlines()) or indent
+            blocks.extend([heading, "", body_lines, ""])
+        blocks.extend(["---", ""])
+    while blocks and blocks[-1] in {"", "---"}:
+        blocks.pop()
+    return "\n".join(blocks).rstrip()
+
+
+def _inline_comment_rows(comments: Sequence[ReviewComment]) -> list[Text]:
+    rows: list[Text] = []
+    for thread in group_review_threads(comments):
+        for depth, comment in enumerate(thread):
+            author = comment.author or "unknown"
+            when = f" · {comment.created_at}" if comment.created_at else ""
+            loc = _comment_location(comment)
+            head = Text()
+            head.append(f"{'':>4} {'':>4} │ ", style="dim")
+            if depth == 0 and len(thread) == 1:
+                branch = "● "
+            elif depth == 0:
+                branch = "┌ "
+            elif depth == len(thread) - 1:
+                branch = "└ "
+            else:
+                branch = "├ "
+            head.append(branch, style="bold yellow")
+            head.append(author, style="bold yellow")
+            if depth:
+                head.append(" (reply)", style="yellow")
+            else:
+                head.append(f" · {loc}", style="dim yellow")
+            head.append(when, style="dim yellow")
+            rows.append(head)
+            body = (comment.body or "(empty)").splitlines() or ["(empty)"]
+            for line in body:
+                row = Text()
+                row.append(f"{'':>4} {'':>4} │ ", style="dim")
+                row.append("│ ", style="yellow")
+                row.append(("  " * depth) + line, style="#fdd663 on #2b313b")
+                rows.append(row)
+        spacer = Text()
+        spacer.append(f"{'':>4} {'':>4} │ ", style="dim")
+        spacer.append("╰──", style="dim yellow")
+        rows.append(spacer)
+    return rows
 
 
 def _diff_file_paths(header: str, chunk: Sequence[str]) -> Tuple[str, str]:
@@ -404,6 +593,27 @@ class GithubPullsBackend:
             description=_string(payload.get("body"), ""),
             comments=tuple(_normalize_comment(item) for item in _items(payload.get("comments"))),
             checks=checks,
+            review_comments=self.list_review_comments(summary.number),
+        )
+
+    def list_review_comments(self, number: Union[int, str]) -> Tuple[ReviewComment, ...]:
+        key = str(number).lstrip("#")
+        command = [
+            "gh",
+            "api",
+            f"repos/{self.repository}/pulls/{key}/comments",
+            "--paginate",
+        ]
+        try:
+            payload = run_json(command, timeout=self.timeout)
+        except ProcessError:
+            return ()
+        if not isinstance(payload, list):
+            return ()
+        return tuple(
+            _normalize_review_comment(item)
+            for item in payload
+            if isinstance(item, dict)
         )
 
     def list_checks(self, number: Union[int, str]) -> Tuple[CiCheck, ...]:
@@ -495,6 +705,38 @@ def _normalize_comment(payload: Any) -> Comment:
         created_at=_optional_string(item.get("createdAt")),
         url=_optional_string(item.get("url")),
     )
+
+
+def _normalize_review_comment(payload: Mapping[str, Any]) -> ReviewComment:
+    user = payload.get("user")
+    if isinstance(user, dict):
+        author = _string(user.get("login") or user.get("name"), "unknown")
+    else:
+        author = "unknown"
+    comment_id = payload.get("id")
+    if isinstance(comment_id, bool) or not isinstance(comment_id, int):
+        comment_id = 0
+    return ReviewComment(
+        id=comment_id,
+        path=_string(payload.get("path"), ""),
+        body=_string(payload.get("body"), ""),
+        author=author,
+        side=_string(payload.get("side"), "RIGHT").upper() or "RIGHT",
+        line=_optional_positive_int(payload.get("line")),
+        start_line=_optional_positive_int(payload.get("start_line")),
+        original_line=_optional_positive_int(payload.get("original_line")),
+        original_start_line=_optional_positive_int(payload.get("original_start_line")),
+        diff_hunk=_string(payload.get("diff_hunk"), ""),
+        created_at=_optional_string(payload.get("created_at")),
+        url=_optional_string(payload.get("html_url") or payload.get("url")),
+        in_reply_to_id=_optional_positive_int(payload.get("in_reply_to_id")),
+    )
+
+
+def _optional_positive_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return None
+    return value
 
 
 def _normalize_check(item: Mapping[str, Any]) -> CiCheck:
