@@ -133,6 +133,69 @@ class IncrementalControllerTests(unittest.TestCase):
             self.assertEqual(len(state.tasks), 1)
             self.assertEqual(state.tasks[0].identity.key, "2")
 
+    def test_full_reload_reports_fetch_and_save_phases(self):
+        class RecordingBackend:
+            backend_label = "GitHub"
+            scope_label = "acme/app"
+            limit = 100
+
+            def list_tasks(self, query=None, refresh=False, assignee_filter=AssigneeFilter.ALL, **kwargs):
+                return (_summary(1, "Seed"),)
+
+            def get_task(self, identity, refresh=False):
+                raise AssertionError("unexpected detail fetch")
+
+        with TemporaryDirectory() as directory:
+            events = []
+            controller = TasksController(
+                RecordingBackend(),
+                cache_scope="github:acme/app",
+                cache_dir=directory,
+            )
+            state = controller.make_list_state()
+            controller.load_list(state, full=True, on_progress=events.append)
+            self.assertEqual([event.done for event in events], [0, 1])
+            self.assertEqual(events[0].total, 2)
+            self.assertEqual(events[-1].done, 1)
+            self.assertEqual(events[0].label, "Fetching issues")
+            self.assertEqual(events[1].label, "Saving cache")
+            self.assertEqual(events[-1].done + 1, events[-1].total)
+
+    def test_me_or_unassigned_reports_three_phases(self):
+        class RecordingBackend:
+            backend_label = "GitHub"
+            scope_label = "acme/app"
+            limit = 100
+
+            def list_tasks(self, query=None, refresh=False, assignee_filter=AssigneeFilter.ALL, **kwargs):
+                if assignee_filter is AssigneeFilter.ME:
+                    return (_summary(1, "Mine"),)
+                if assignee_filter is AssigneeFilter.UNASSIGNED:
+                    return (_summary(2, "Free"),)
+                raise AssertionError(f"unexpected filter {assignee_filter}")
+
+            def get_task(self, identity, refresh=False):
+                raise AssertionError("unexpected detail fetch")
+
+        with TemporaryDirectory() as directory:
+            events = []
+            controller = TasksController(
+                RecordingBackend(),
+                cache_scope="github:acme/app",
+                cache_dir=directory,
+                initial_assignee_filter=AssigneeFilter.ME_OR_UNASSIGNED,
+            )
+            state = controller.make_list_state()
+            controller.load_list(state, full=True, on_progress=events.append)
+            self.assertEqual([event.label for event in events], [
+                "Fetching @me",
+                "Fetching unassigned",
+                "Saving cache",
+            ])
+            self.assertEqual([event.done for event in events], [0, 1, 2])
+            self.assertEqual(events[0].total, 3)
+            self.assertEqual({task.identity.key for task in state.tasks}, {"1", "2"})
+
 
 class GithubParentListTests(unittest.TestCase):
     @patch("tasks.github.run_json")

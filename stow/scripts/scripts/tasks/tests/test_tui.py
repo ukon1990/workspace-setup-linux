@@ -17,6 +17,7 @@ from tasks.models import (
 from tasks.tui import (
     HierarchyNode,
     ListState,
+    SyncProgress,
     TasksController,
     assignee_filter_for_key,
     assignee_filter_text,
@@ -29,8 +30,10 @@ from tasks.tui import (
     compute_progress,
     dependency_suffix,
     detail_content_lines,
+    eta_from_durations,
     expand_hierarchy,
     filter_tasks,
+    format_sync_progress,
     is_done,
     is_done_status,
     relationship_line,
@@ -172,6 +175,19 @@ class HelperTests(unittest.TestCase):
         self.assertEqual([task.identity.key for task in visible_tasks(state)], ["2", "1"])
         state.index = 0
         self.assertEqual(selected_task(state).identity.key, "2")
+
+    def test_eta_and_sync_progress_formatting(self):
+        self.assertIsNone(eta_from_durations([], 2))
+        self.assertIsNone(eta_from_durations([2.0], 0))
+        self.assertEqual(eta_from_durations([2.0, 4.0], 1), 3.0)
+        text = format_sync_progress(
+            SyncProgress(done=0, total=3, label="Fetching @me", eta_seconds=None)
+        )
+        self.assertEqual(text, "Syncing 1/3 · Fetching @me")
+        text = format_sync_progress(
+            SyncProgress(done=1, total=3, label="Fetching unassigned", eta_seconds=4.2)
+        )
+        self.assertEqual(text, "Syncing 2/3 · Fetching unassigned · ETA ~4s")
 
     def test_detail_text_and_relationship_keep_directional_labels(self):
         relation = TaskRelationship(
@@ -399,8 +415,10 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(
             backend.list_calls,
             [
-                ("ready", False, AssigneeFilter.ME_OR_UNASSIGNED),
-                ("ready", True, AssigneeFilter.ME_OR_UNASSIGNED),
+                ("ready", False, AssigneeFilter.ME),
+                ("ready", False, AssigneeFilter.UNASSIGNED),
+                ("ready", True, AssigneeFilter.ME),
+                ("ready", True, AssigneeFilter.UNASSIGNED),
             ],
         )
 

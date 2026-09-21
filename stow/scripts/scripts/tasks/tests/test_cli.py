@@ -66,6 +66,8 @@ class AdapterTests(unittest.TestCase):
             limit=25,
             jql_extra="priority = High",
             assignee_filter=AssigneeFilter.ME,
+            updated_since=None,
+            include_done=False,
         )
         backend.search_tasks.assert_called_once_with(
             "PROJ",
@@ -73,6 +75,8 @@ class AdapterTests(unittest.TestCase):
             limit=25,
             jql_extra="priority = High",
             assignee_filter=AssigneeFilter.UNASSIGNED,
+            updated_since=None,
+            include_done=False,
         )
         backend.get_task.assert_called_once_with("PROJ-7")
 
@@ -94,9 +98,16 @@ class AdapterTests(unittest.TestCase):
         )
         self.assertIs(adapter.get_task(identity, refresh=True), detail)
 
-        backend.list_issues.assert_called_once_with(assignee_filter=AssigneeFilter.ME_OR_UNASSIGNED)
+        backend.list_issues.assert_called_once_with(
+            assignee_filter=AssigneeFilter.ME_OR_UNASSIGNED,
+            updated_since=None,
+            include_closed=False,
+        )
         backend.search_issues.assert_called_once_with(
-            "parser", assignee_filter=AssigneeFilter.ASSIGNED_ANYONE
+            "parser",
+            assignee_filter=AssigneeFilter.ASSIGNED_ANYONE,
+            updated_since=None,
+            include_closed=False,
         )
         backend.get_issue.assert_called_once_with(identity)
 

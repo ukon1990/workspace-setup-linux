@@ -32,6 +32,7 @@ from .logic import (
     TABLE_SORT_COLUMNS,
     HierarchyNode,
     ListState,
+    SyncProgress,
     TasksController,
     assignee_filter_for_key,
     assignee_filter_text,
@@ -41,6 +42,7 @@ from .logic import (
     build_relationship_hierarchy,
     detail_content_text,
     filter_tasks,
+    format_sync_progress,
     selected_task,
     set_filter,
     task_url,
@@ -241,10 +243,12 @@ class ListScreen(Screen):
         yield Tree("Tasks", id="task-tree")
         yield Static("", id="empty-message")
         yield Footer()
-        yield LoadingIndicator()
+        with Vertical(id="loading-overlay"):
+            yield LoadingIndicator()
+            yield Static("", id="sync-progress")
 
     def on_mount(self) -> None:
-        self.query_one(LoadingIndicator).display = False
+        self.query_one("#loading-overlay").display = False
         table = self.query_one("#task-table", DataTable)
         table.add_columns(
             ("Key", "key"),
@@ -395,7 +399,16 @@ class ListScreen(Screen):
         self._update_chrome()
 
     def _set_loading(self, active: bool) -> None:
-        self.query_one(LoadingIndicator).display = active
+        overlay = self.query_one("#loading-overlay")
+        overlay.display = active
+        if not active:
+            self.query_one("#sync-progress", Static).update("")
+
+    def _set_sync_progress(self, progress: SyncProgress) -> None:
+        self.query_one("#sync-progress", Static).update(format_sync_progress(progress))
+
+    def _progress_callback(self):
+        return lambda progress: self.app.call_from_thread(self._set_sync_progress, progress)
 
     def _build_forest(self) -> list[HierarchyNode]:
         items = list(self.controller.cached_items.values()) or list(self.state.tasks)
@@ -408,7 +421,12 @@ class ListScreen(Screen):
         self.app.call_from_thread(self._set_loading, True)
         forest: list[HierarchyNode] = []
         try:
-            self.controller.load_list(self.state, refresh=refresh, full=full)
+            self.controller.load_list(
+                self.state,
+                refresh=refresh,
+                full=full,
+                on_progress=self._progress_callback(),
+            )
             if self._view_mode == "tree":
                 forest = self._build_forest()
         finally:
@@ -437,6 +455,7 @@ class ListScreen(Screen):
                 self.state,
                 selection,
                 reload_if_unchanged=reload_if_unchanged,
+                on_progress=self._progress_callback(),
             )
             if self._view_mode == "tree":
                 forest = self._build_forest()
@@ -448,7 +467,9 @@ class ListScreen(Screen):
         self.app.call_from_thread(self._set_loading, True)
         forest: list[HierarchyNode] = []
         try:
-            self.controller.clear_filters(self.state)
+            self.controller.clear_filters(
+                self.state, on_progress=self._progress_callback()
+            )
             if self._view_mode == "tree":
                 forest = self._build_forest()
         finally:
@@ -632,10 +653,12 @@ class DetailScreen(Screen):
             with Vertical(id="relations-pane"):
                 yield Tree("Relationships", id="relations-tree")
         yield Footer()
-        yield LoadingIndicator()
+        with Vertical(id="loading-overlay"):
+            yield LoadingIndicator()
+            yield Static("", id="sync-progress")
 
     def on_mount(self) -> None:
-        self.query_one(LoadingIndicator).display = False
+        self.query_one("#loading-overlay").display = False
         self.query_one("#content-pane").border_title = "Content"
         self.query_one("#relations-pane").border_title = "Relationships"
         tree = self.query_one("#relations-tree", Tree)
@@ -645,7 +668,10 @@ class DetailScreen(Screen):
         self.reload_detail(refresh=False)
 
     def _set_loading(self, active: bool) -> None:
-        self.query_one(LoadingIndicator).display = active
+        overlay = self.query_one("#loading-overlay")
+        overlay.display = active
+        if not active:
+            self.query_one("#sync-progress", Static).update("")
 
     def _set_pane_focus(self, relations: bool) -> None:
         self._focus_relations = relations
