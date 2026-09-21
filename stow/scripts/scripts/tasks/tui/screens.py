@@ -20,6 +20,7 @@ from textual.widgets import (
     Markdown,
     OptionList,
     Static,
+    TextArea,
     Tree,
 )
 from textual.widgets.option_list import Option
@@ -62,13 +63,20 @@ from ..pulls import (
     comments_for_path,
     format_line_counts,
     format_review_comments,
-    format_unified_diff,
     review_comment_markers,
     review_comments_by_anchor,
     split_diff_by_file,
     summarize_diff_files,
+    suggestion_fence,
+)
+from ..review_drafts import (
+    DraftComment,
+    add_draft_comment,
+    clear_draft,
+    get_draft,
 )
 from ..review_views import file_view_status, hunk_fingerprint, mark_file_viewed
+from .diff_view import DiffView
 
 HELP_MARKDOWN = """\
 # Tasks help
@@ -91,6 +99,9 @@ HELP_MARKDOWN = """\
 | `x` | Toggle hiding generated/excluded files |
 | `l` | Mark current file as looked at |
 | `m` | Open all review comments for current file |
+| `c` | Compose inline comment (Files / Diff) |
+| `v` | Toggle visual line selection (Diff) |
+| `A` / `R` / `S` | Approve / Request changes / Submit comment review |
 | `o` | Open URL |
 | `?` | This help |
 | `h` / `Backspace` / `Esc` | Back |
@@ -243,6 +254,51 @@ class ReviewCommentsModal(ModalScreen[None]):
             yield Label("Press Esc to close")
 
     def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class CommentModal(ModalScreen[Optional[str]]):
+    """Compose an inline review comment (saved locally until submit)."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel", show=True),
+        Binding("ctrl+s", "insert_suggestion", "Suggest", show=True),
+        Binding("ctrl+enter", "save", "Save", show=True),
+    ]
+
+    def __init__(
+        self,
+        title: str,
+        *,
+        suggestion_lines: tuple[str, ...] = (),
+        initial: str = "",
+    ) -> None:
+        super().__init__()
+        self._title = title
+        self._suggestion_lines = suggestion_lines
+        self._initial = initial
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="modal-box", id="comment-modal"):
+            yield Label(self._title)
+            yield TextArea(self._initial, id="comment-body")
+            yield Label("ctrl+enter save · ctrl+s suggestion · Esc cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#comment-body", TextArea).focus()
+
+    def action_insert_suggestion(self) -> None:
+        area = self.query_one("#comment-body", TextArea)
+        fence = suggestion_fence(self._suggestion_lines)
+        current = area.text
+        if current and not current.endswith("\n"):
+            current += "\n"
+        area.load_text(current + fence + "\n")
+
+    def action_save(self) -> None:
+        self.dismiss(self.query_one("#comment-body", TextArea).text)
+
+    def action_cancel(self) -> None:
         self.dismiss(None)
 
 
@@ -1131,6 +1187,10 @@ class PullDetailScreen(Screen):
         Binding("x", "toggle_excluded", "Excl", show=True),
         Binding("l", "mark_looked", "Looked", show=True),
         Binding("m", "show_comments", "Comments", show=True),
+        Binding("c", "compose_comment", "Comment", show=True),
+        Binding("A", "approve_review", "Approve", show=True),
+        Binding("R", "request_changes", "Request", show=True),
+        Binding("S", "submit_comment_review", "Submit", show=True),
         Binding("r", "refresh", "Refresh", show=True),
         Binding("o", "open_url", "Open URL", show=True),
         Binding("question_mark", "help", "Help", show=True),
@@ -1166,7 +1226,7 @@ class PullDetailScreen(Screen):
         with Horizontal(id="diff-side"):
             yield OptionList(id="file-list")
             with VerticalScroll(id="diff-pane"):
-                yield Static("", id="diff-body")
+                yield DiffView(id="diff-body")
         yield Footer()
         with Vertical(id="loading-overlay"):
             yield LoadingIndicator()
@@ -1219,7 +1279,7 @@ class PullDetailScreen(Screen):
         if self._focus_pane == 0:
             files.focus()
         else:
-            diff.focus()
+            self.query_one("#diff-body", DiffView).focus()
 
     def _update_status(self) -> None:
         status = self.query_one("#status-bar", Static)
@@ -1340,7 +1400,7 @@ class PullDetailScreen(Screen):
         self._diff_loading = active
         if active:
             self._set_loading(True)
-            self.query_one("#diff-body", Static).update("Loading diff…")
+            self.query_one("#diff-body", DiffView).show_message("Loading diff…")
             self._update_status()
 
     def _after_diff(self, text: str, error: Optional[str]) -> None:
@@ -1352,7 +1412,7 @@ class PullDetailScreen(Screen):
         if error:
             self._file_diffs = []
             self.query_one("#file-list", OptionList).clear_options()
-            self.query_one("#diff-body", Static).update(f"Error: {error}")
+            self.query_one("#diff-body", DiffView).show_message(f"Error: {error}")
             self._update_status()
             return
         self._file_diffs = split_diff_by_file(
@@ -1385,6 +1445,9 @@ class PullDetailScreen(Screen):
         comment_n = len(comments_for_path(self._review_comments(), item.path))
         if comment_n:
             parts.append(f"●{comment_n}")
+        draft_n = get_draft(self.pull.stable_id).count_for_path(item.path)
+        if draft_n:
+            parts.append(f"+{draft_n} draft")
         marker = " [gen]" if item.excluded else ""
         return f"{' '.join(parts)}  {item.label}{marker}"
 
@@ -1400,7 +1463,7 @@ class PullDetailScreen(Screen):
                     else "(no changed files)"
                 )
                 files.set_options([Option(empty_label, id="empty")])
-                self.query_one("#diff-body", Static).update(
+                self.query_one("#diff-body", DiffView).show_message(
                     self._diff_text or "(empty diff)"
                 )
                 self.query_one("#diff-pane").border_title = "Diff"
@@ -1424,6 +1487,7 @@ class PullDetailScreen(Screen):
         self._file_index = index
         item = visible[index]
         comment_n = len(comments_for_path(self._review_comments(), item.path))
+        draft_n = get_draft(self.pull.stable_id).count_for_path(item.path)
         status = file_view_status(
             self.pull.stable_id, item.path, hunk_fingerprint(item.hunk)
         )
@@ -1431,16 +1495,21 @@ class PullDetailScreen(Screen):
             status, ""
         )
         comment_note = f" · ●{comment_n}" if comment_n else ""
+        draft_note = f" · +{draft_n} draft" if draft_n else ""
         self.query_one("#diff-pane").border_title = (
             f"Diff · {item.label} · {format_line_counts(item.added, item.deleted)}"
-            f"{comment_note}{status_note}"
+            f"{comment_note}{draft_note}{status_note}"
         )
         markers = review_comment_markers(self._review_comments(), item.path)
         anchored = review_comments_by_anchor(self._review_comments(), item.path)
-        self.query_one("#diff-body", Static).update(
-            format_unified_diff(
-                item.hunk, line_markers=markers, comments_by_anchor=anchored
-            )
+        drafts = get_draft(self.pull.stable_id).comments_for_path(item.path)
+        view = self.query_one("#diff-body", DiffView)
+        view.set_diff(
+            item.hunk,
+            path=item.path,
+            line_markers=markers,
+            comments_by_anchor=anchored,
+            drafts=drafts,
         )
 
     @staticmethod
@@ -1531,6 +1600,119 @@ class PullDetailScreen(Screen):
             )
         )
 
+    def action_compose_comment(self) -> None:
+        if self._active_tab != "files" or not self._diff_loaded:
+            self.notify("Open the Files tab first", severity="warning")
+            return
+        if self._focus_pane != 1:
+            self._set_files_focus(1)
+        self.query_one("#diff-body", DiffView).action_compose_comment()
+
+    @on(DiffView.CommentRequested)
+    def on_comment_requested(self, event: DiffView.CommentRequested) -> None:
+        loc = (
+            f"{event.side}:{event.start_line}–{event.line}"
+            if event.start_line != event.line
+            else f"{event.side}:{event.line}"
+        )
+        title = f"Comment on {event.path} · {loc}"
+
+        def _saved(body: Optional[str]) -> None:
+            if body is None:
+                return
+            text = body.strip()
+            if not text:
+                self.notify("Comment is empty", severity="warning")
+                return
+            start = event.start_line if event.start_line != event.line else None
+            add_draft_comment(
+                self.pull.stable_id,
+                DraftComment(
+                    path=event.path,
+                    side=event.side,
+                    line=event.line,
+                    body=text,
+                    start_line=start,
+                ),
+            )
+            self._apply_file_diffs()
+            self.notify("Draft saved locally")
+
+        self.app.push_screen(
+            CommentModal(title, suggestion_lines=event.suggestion_lines),
+            _saved,
+        )
+
+    def action_approve_review(self) -> None:
+        self._submit_review("APPROVE")
+
+    def action_request_changes(self) -> None:
+        self._submit_review("REQUEST_CHANGES")
+
+    def action_submit_comment_review(self) -> None:
+        self._submit_review("COMMENT")
+
+    def _submit_review(self, event: str) -> None:
+        if self._active_tab != "files":
+            self.notify("Switch to Files tab to submit a review", severity="warning")
+            return
+        draft = get_draft(self.pull.stable_id)
+        label = {
+            "APPROVE": "Approve",
+            "REQUEST_CHANGES": "Request changes",
+            "COMMENT": "Comment",
+        }.get(event, event)
+
+        def _with_body(body: Optional[str]) -> None:
+            if body is None:
+                return
+            review_body = body.strip() if body.strip() else draft.body
+            comments = [
+                {
+                    "path": item.path,
+                    "side": item.side,
+                    "line": item.line,
+                    "start_line": item.start_line,
+                    "body": item.body,
+                }
+                for item in draft.comments
+            ]
+            self._run_submit(event, review_body, comments, label)
+
+        initial = draft.body
+        self.app.push_screen(
+            CommentModal(
+                f"{label} review · {len(draft.comments)} draft comment(s)",
+                initial=initial,
+            ),
+            _with_body,
+        )
+
+    @work(exclusive=True, group="pull-submit", thread=True)
+    def _run_submit(
+        self,
+        event: str,
+        body: str,
+        comments: list,
+        label: str,
+    ) -> None:
+        self.app.call_from_thread(self._set_loading, True)
+        error = self.controller.submit_review(
+            self.pull, event, body=body, comments=comments
+        )
+        self.app.call_from_thread(self._after_submit, error, label)
+
+    def _after_submit(self, error: Optional[str], label: str) -> None:
+        self._set_loading(False)
+        if error:
+            self.notify(f"Submit failed (draft kept): {error}", severity="error")
+            return
+        clear_draft(self.pull.stable_id)
+        self.notify(f"{label} submitted")
+        self.reload_detail(refresh=True)
+        if self._active_tab == "files":
+            self.load_diff(refresh=True)
+
     def action_move_down(self) -> None:
         if self._active_tab == "description":
             self.query_one("#content-pane", VerticalScroll).scroll_down()
@@ -1538,7 +1720,7 @@ class PullDetailScreen(Screen):
         if self._focus_pane == 0:
             self.query_one("#file-list", OptionList).action_cursor_down()
         else:
-            self.query_one("#diff-pane", VerticalScroll).scroll_down()
+            self.query_one("#diff-body", DiffView).action_cursor_down()
 
     def action_move_up(self) -> None:
         if self._active_tab == "description":
@@ -1547,7 +1729,7 @@ class PullDetailScreen(Screen):
         if self._focus_pane == 0:
             self.query_one("#file-list", OptionList).action_cursor_up()
         else:
-            self.query_one("#diff-pane", VerticalScroll).scroll_up()
+            self.query_one("#diff-body", DiffView).action_cursor_up()
 
     def action_refresh(self) -> None:
         self.reload_detail(refresh=True)
@@ -1568,6 +1750,11 @@ class PullDetailScreen(Screen):
         self.app.push_screen(HelpScreen())
 
     def action_back(self) -> None:
+        if self._active_tab == "files" and self._focus_pane == 1:
+            view = self.query_one("#diff-body", DiffView)
+            if view.visual_mode:
+                view.action_clear_visual()
+                return
         _go_back(self)
 
     def action_quit_app(self) -> None:

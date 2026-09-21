@@ -174,7 +174,7 @@ Footer {
 
 /* Modals */
 
-InputModal, AssigneeFilterModal, HelpScreen {
+InputModal, AssigneeFilterModal, HelpScreen, ReviewCommentsModal, CommentModal {
     align: center middle;
 }
 
@@ -194,6 +194,18 @@ InputModal, AssigneeFilterModal, HelpScreen {
 
 .modal-box Input {
     margin-bottom: 1;
+}
+
+#comment-modal {
+    width: 80;
+    max-width: 95%;
+    height: auto;
+    max-height: 80%;
+}
+
+#comment-body {
+    height: 12;
+    margin: 1 0;
 }
 
 #help-body {

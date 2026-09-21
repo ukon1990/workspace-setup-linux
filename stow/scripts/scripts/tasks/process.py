@@ -39,6 +39,7 @@ def run_text(
     timeout: float = 30,
     cwd: Optional[Union[str, Path]] = None,
     env: Optional[Mapping[str, str]] = None,
+    input_text: Optional[str] = None,
 ) -> str:
     command = _validate_command(argv)
     if isinstance(timeout, bool) or not isinstance(timeout, Real) or timeout <= 0:
@@ -58,6 +59,7 @@ def run_text(
             timeout=timeout,
             cwd=cwd,
             env=env,
+            input=input_text,
         )
     except FileNotFoundError as error:
         raise ProcessError(
@@ -98,8 +100,11 @@ def run_json(
     timeout: float = 30,
     cwd: Optional[Union[str, Path]] = None,
     env: Optional[Mapping[str, str]] = None,
+    input_text: Optional[str] = None,
 ) -> Any:
-    output = run_text(argv, timeout=timeout, cwd=cwd, env=env)
+    output = run_text(
+        argv, timeout=timeout, cwd=cwd, env=env, input_text=input_text
+    )
     try:
         return json.loads(output)
     except json.JSONDecodeError as error:

@@ -19,6 +19,7 @@ class ProcessTests(unittest.TestCase):
             timeout=30,
             cwd=None,
             env=None,
+            input=None,
         )
 
     def test_rejects_string_command(self):

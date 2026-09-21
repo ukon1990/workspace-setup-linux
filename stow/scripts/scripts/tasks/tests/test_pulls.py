@@ -474,5 +474,93 @@ class CliPullsWiringTests(unittest.TestCase):
         self.assertIn("No GitHub repository", run.call_args.kwargs["pulls_error"])
 
 
+class SelectionAndSuggestionTests(unittest.TestCase):
+    def test_selection_github_anchor_prefers_right_side(self):
+        from tasks.pulls import parse_diff_rows, selection_github_anchor, suggestion_fence
+
+        patch = """\
+@@ -1,3 +1,3 @@
+ context
+-old
++new
+"""
+        rows = parse_diff_rows(patch)
+        # select deletion + addition
+        del_idx = next(i for i, row in enumerate(rows) if row.kind == "del")
+        add_idx = next(i for i, row in enumerate(rows) if row.kind == "add")
+        side, start, end, texts = selection_github_anchor(rows, del_idx, add_idx)
+        self.assertEqual(side, "RIGHT")
+        self.assertEqual((start, end), (2, 2))
+        self.assertEqual(texts, ("new",))
+        self.assertEqual(suggestion_fence(texts), "```suggestion\nnew\n```")
+
+    def test_selection_left_side_for_deletions_only(self):
+        from tasks.pulls import parse_diff_rows, selection_github_anchor
+
+        patch = """\
+@@ -1,2 +1,1 @@
+-gone
+ keep
+"""
+        rows = parse_diff_rows(patch)
+        del_idx = next(i for i, row in enumerate(rows) if row.kind == "del")
+        side, start, end, texts = selection_github_anchor(rows, del_idx, del_idx)
+        self.assertEqual(side, "LEFT")
+        self.assertEqual((start, end), (1, 1))
+        self.assertEqual(texts, ("gone",))
+
+    def test_multi_line_right_selection(self):
+        from tasks.pulls import parse_diff_rows, selection_github_anchor
+
+        patch = """\
+@@ -1,1 +1,3 @@
++one
++two
+ keep
+"""
+        rows = parse_diff_rows(patch)
+        first = next(i for i, row in enumerate(rows) if row.kind == "add")
+        second = first + 1
+        side, start, end, texts = selection_github_anchor(rows, first, second)
+        self.assertEqual(side, "RIGHT")
+        self.assertEqual((start, end), (1, 2))
+        self.assertEqual(texts, ("one", "two"))
+
+
+class SubmitReviewTests(unittest.TestCase):
+    @patch("tasks.pulls.run_json")
+    @patch("tasks.pulls.run_text", return_value="abc123\n")
+    def test_submit_review_posts_payload(self, run_text, run_json):
+        run_json.return_value = {"id": 1}
+        backend = GithubPullsBackend("owner/repo")
+        backend.submit_review(
+            7,
+            "COMMENT",
+            body="LGTM-ish",
+            comments=[
+                {
+                    "path": "a.py",
+                    "side": "RIGHT",
+                    "line": 12,
+                    "start_line": 10,
+                    "body": "nit",
+                }
+            ],
+        )
+        run_text.assert_called_once()
+        self.assertIn("pulls/7", run_text.call_args.args[0][2])
+        command = run_json.call_args.args[0]
+        self.assertEqual(command[:4], ["gh", "api", "--method", "POST"])
+        self.assertIn("pulls/7/reviews", command[4])
+        import json
+
+        payload = json.loads(run_json.call_args.kwargs["input_text"])
+        self.assertEqual(payload["event"], "COMMENT")
+        self.assertEqual(payload["commit_id"], "abc123")
+        self.assertEqual(payload["body"], "LGTM-ish")
+        self.assertEqual(payload["comments"][0]["start_line"], 10)
+        self.assertEqual(payload["comments"][0]["start_side"], "RIGHT")
+
+
 if __name__ == "__main__":
     unittest.main()

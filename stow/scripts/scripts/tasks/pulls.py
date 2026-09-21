@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -193,36 +194,36 @@ _SKIP_DIFF_PREFIXES = (
 )
 
 
-def format_unified_diff(
+@dataclass(frozen=True)
+class DiffRow:
+    """One rendered row in a unified diff view."""
+
+    kind: str  # hunk | add | del | ctx | meta | comment
+    raw: str
+    old_line: Optional[int] = None
+    new_line: Optional[int] = None
+    side: Optional[str] = None  # LEFT | RIGHT for selectable content
+    selectable: bool = False
+    suggestion_text: str = ""  # line content without +/- prefix for suggestions
+
+
+def parse_diff_rows(
     hunk: str,
     *,
-    line_markers: Optional[Mapping[Tuple[str, int], int]] = None,
     comments_by_anchor: Optional[Mapping[Tuple[str, int], Sequence[ReviewComment]]] = None,
-) -> Text:
-    """Render a file hunk as a unified diff with dual line-number gutters."""
+) -> list[DiffRow]:
+    """Parse a file hunk into structured rows (comments expand under end lines)."""
     if not hunk or not hunk.strip():
-        return Text("(empty diff)", style="dim")
-
-    markers = line_markers or {}
+        return []
     anchored = comments_by_anchor or {}
-    range_lines = _range_line_marks(anchored)
-    rows: list[Text] = []
+    rows: list[DiffRow] = []
     old_line = 0
     new_line = 0
     started = False
 
-    def _append_marker(row: Text, side: str, number: int) -> None:
-        count = markers.get((side, number), 0)
-        if count:
-            row.append(f"  ●{count}", style="bold yellow")
-        elif (side, number) in range_lines:
-            row.append("  ┃", style="yellow")
-
-    def _flush_comments(side: str, number: int) -> None:
-        comments = anchored.get((side, number))
-        if not comments:
-            return
-        rows.extend(_inline_comment_rows(comments))
+    def _flush(side: str, number: int) -> None:
+        for comment_row in _inline_comment_diff_rows(anchored.get((side, number), ())):
+            rows.append(comment_row)
 
     for raw in hunk.splitlines():
         if raw.startswith(_SKIP_DIFF_PREFIXES):
@@ -232,62 +233,234 @@ def format_unified_diff(
             old_line = int(match.group(1))
             new_line = int(match.group(2))
             started = True
-            row = Text()
-            row.append(f"{'':>4} {'':>4} │ ", style="dim")
-            row.append(raw, style="bold cyan")
-            rows.append(row)
+            rows.append(DiffRow(kind="hunk", raw=raw))
             continue
         if not started and not raw.startswith((" ", "+", "-", "\\")):
             continue
         if raw.startswith("\\"):
-            row = Text()
-            row.append(f"{'':>4} {'':>4} │ ", style="dim")
-            row.append(raw, style="dim italic")
-            rows.append(row)
+            rows.append(DiffRow(kind="meta", raw=raw))
             continue
         if raw.startswith("+"):
-            row = Text()
-            row.append(f"{'':>4} ", style="dim")
-            row.append(f"{new_line:>4} ", style="#81c995")
-            row.append("│ ", style="dim")
-            row.append(raw, style="#81c995 on #1b3329")
-            _append_marker(row, "RIGHT", new_line)
-            rows.append(row)
-            _flush_comments("RIGHT", new_line)
+            rows.append(
+                DiffRow(
+                    kind="add",
+                    raw=raw,
+                    old_line=None,
+                    new_line=new_line,
+                    side="RIGHT",
+                    selectable=True,
+                    suggestion_text=raw[1:],
+                )
+            )
+            _flush("RIGHT", new_line)
             new_line += 1
             continue
         if raw.startswith("-"):
-            row = Text()
-            row.append(f"{old_line:>4} ", style="#f28b82")
-            row.append(f"{'':>4} ", style="dim")
-            row.append("│ ", style="dim")
-            row.append(raw, style="#f28b82 on #3b2220")
-            _append_marker(row, "LEFT", old_line)
-            rows.append(row)
-            _flush_comments("LEFT", old_line)
+            rows.append(
+                DiffRow(
+                    kind="del",
+                    raw=raw,
+                    old_line=old_line,
+                    new_line=None,
+                    side="LEFT",
+                    selectable=True,
+                    suggestion_text=raw[1:],
+                )
+            )
+            _flush("LEFT", old_line)
             old_line += 1
             continue
         display = raw if raw.startswith(" ") else f" {raw}"
-        row = Text()
-        row.append(f"{old_line:>4} ", style="dim")
-        row.append(f"{new_line:>4} ", style="dim")
-        row.append("│ ", style="dim")
-        row.append(display, style="#e8eaed")
-        _append_marker(row, "RIGHT", new_line)
-        rows.append(row)
-        _flush_comments("RIGHT", new_line)
+        rows.append(
+            DiffRow(
+                kind="ctx",
+                raw=display,
+                old_line=old_line,
+                new_line=new_line,
+                side="RIGHT",
+                selectable=True,
+                suggestion_text=display[1:] if display.startswith(" ") else display,
+            )
+        )
+        _flush("RIGHT", new_line)
         old_line += 1
         new_line += 1
+    return rows
 
+
+def selection_github_anchor(
+    rows: Sequence[DiffRow], start: int, end: int
+) -> Optional[Tuple[str, int, int, Tuple[str, ...]]]:
+    """Map a row index range to GitHub side/start_line/line + suggestion lines."""
     if not rows:
-        return Text("(no hunks)", style="dim")
+        return None
+    lo, hi = (start, end) if start <= end else (end, start)
+    lo = max(0, lo)
+    hi = min(len(rows) - 1, hi)
+    selected = [rows[i] for i in range(lo, hi + 1) if rows[i].selectable]
+    if not selected:
+        return None
+    right = [row for row in selected if row.side == "RIGHT" and row.new_line is not None]
+    left = [row for row in selected if row.side == "LEFT" and row.old_line is not None]
+    if right:
+        numbers = [row.new_line for row in right if row.new_line is not None]
+        texts = tuple(row.suggestion_text for row in right)
+        return "RIGHT", min(numbers), max(numbers), texts
+    if left:
+        numbers = [row.old_line for row in left if row.old_line is not None]
+        texts = tuple(row.suggestion_text for row in left)
+        return "LEFT", min(numbers), max(numbers), texts
+    return None
 
-    result = Text()
-    for offset, row in enumerate(rows):
-        if offset:
-            result.append("\n")
-        result.append_text(row)
-    return result
+
+def suggestion_fence(lines: Sequence[str]) -> str:
+    body = "\n".join(lines)
+    return f"```suggestion\n{body}\n```"
+
+
+def _inline_comment_diff_rows(comments: Sequence[ReviewComment]) -> list[DiffRow]:
+    rows: list[DiffRow] = []
+    for thread in group_review_threads(comments):
+        for depth, comment in enumerate(thread):
+            author = comment.author or "unknown"
+            when = f" · {comment.created_at}" if comment.created_at else ""
+            loc = _comment_location(comment)
+            if depth == 0 and len(thread) == 1:
+                branch = "● "
+            elif depth == 0:
+                branch = "┌ "
+            elif depth == len(thread) - 1:
+                branch = "└ "
+            else:
+                branch = "├ "
+            head = f"{branch}{author}"
+            if depth:
+                head += " (reply)"
+            else:
+                head += f" · {loc}"
+            head += when
+            rows.append(DiffRow(kind="comment", raw=head))
+            body = (comment.body or "(empty)").splitlines() or ["(empty)"]
+            for line in body:
+                rows.append(DiffRow(kind="comment", raw=("  " * depth) + line))
+        rows.append(DiffRow(kind="comment", raw="╰──"))
+    return rows
+
+
+def format_unified_diff(
+    hunk: str,
+    *,
+    line_markers: Optional[Mapping[Tuple[str, int], int]] = None,
+    comments_by_anchor: Optional[Mapping[Tuple[str, int], Sequence[ReviewComment]]] = None,
+    cursor: Optional[int] = None,
+    selection: Optional[Tuple[int, int]] = None,
+) -> Text:
+    """Render a file hunk as a unified diff with dual line-number gutters."""
+    rows = parse_diff_rows(hunk, comments_by_anchor=comments_by_anchor)
+    if not rows:
+        return Text("(empty diff)" if not (hunk and hunk.strip()) else "(no hunks)", style="dim")
+    return render_diff_rows(
+        rows,
+        line_markers=line_markers,
+        comments_by_anchor=comments_by_anchor,
+        cursor=cursor,
+        selection=selection,
+    )
+
+
+def render_diff_rows(
+    rows: Sequence[DiffRow],
+    *,
+    line_markers: Optional[Mapping[Tuple[str, int], int]] = None,
+    comments_by_anchor: Optional[Mapping[Tuple[str, int], Sequence[ReviewComment]]] = None,
+    cursor: Optional[int] = None,
+    selection: Optional[Tuple[int, int]] = None,
+) -> Text:
+    markers = line_markers or {}
+    anchored = comments_by_anchor or {}
+    range_lines = _range_line_marks(anchored)
+    sel_lo = sel_hi = None
+    if selection is not None:
+        sel_lo, sel_hi = sorted(selection)
+
+    def _selected(index: int) -> bool:
+        if sel_lo is None or sel_hi is None:
+            return False
+        return sel_lo <= index <= sel_hi
+
+    def _append_marker(row: Text, side: Optional[str], number: Optional[int]) -> None:
+        if side is None or number is None:
+            return
+        count = markers.get((side, number), 0)
+        if count:
+            row.append(f"  ●{count}", style="bold yellow")
+        elif (side, number) in range_lines:
+            row.append("  ┃", style="yellow")
+
+    out = Text()
+    for index, item in enumerate(rows):
+        if index:
+            out.append("\n")
+        row = Text()
+        selected = _selected(index)
+        cursor_here = cursor is not None and index == cursor
+        prefix_style = "reverse bold" if cursor_here else ("on #3d4f66" if selected else "")
+
+        if item.kind == "hunk":
+            row.append(f"{'':>4} {'':>4} │ ", style="dim")
+            row.append(item.raw, style="bold cyan")
+        elif item.kind == "meta":
+            row.append(f"{'':>4} {'':>4} │ ", style="dim")
+            row.append(item.raw, style="dim italic")
+        elif item.kind == "comment":
+            row.append(f"{'':>4} {'':>4} │ ", style="dim")
+            if item.raw.startswith(("●", "┌", "├", "└", "╰")):
+                row.append(item.raw, style="bold yellow")
+            elif item.raw == "╰──":
+                row.append(item.raw, style="dim yellow")
+            else:
+                row.append("│ ", style="yellow")
+                row.append(item.raw, style="#fdd663 on #2b313b")
+        elif item.kind == "draft":
+            row.append(f"{'':>4} {'':>4} │ ", style="dim")
+            if item.raw.startswith(("◇", "╰")):
+                row.append(item.raw, style="bold #8ab4f8")
+            else:
+                row.append("│ ", style="#8ab4f8")
+                row.append(item.raw, style="#aecbfa on #1e3a5f")
+        elif item.kind == "add":
+            row.append(f"{'':>4} ", style="dim")
+            row.append(f"{item.new_line:>4} ", style="#81c995")
+            row.append("│ ", style="dim")
+            row.append(item.raw, style="#81c995 on #1b3329")
+            _append_marker(row, item.side, item.new_line)
+        elif item.kind == "del":
+            row.append(f"{item.old_line:>4} ", style="#f28b82")
+            row.append(f"{'':>4} ", style="dim")
+            row.append("│ ", style="dim")
+            row.append(item.raw, style="#f28b82 on #3b2220")
+            _append_marker(row, item.side, item.old_line)
+        else:
+            row.append(f"{item.old_line:>4} ", style="dim")
+            row.append(f"{item.new_line:>4} ", style="dim")
+            row.append("│ ", style="dim")
+            row.append(item.raw, style="#e8eaed")
+            _append_marker(row, item.side, item.new_line)
+
+        if prefix_style:
+            styled = Text()
+            if cursor_here:
+                styled.append("❯ ", style="bold #8ab4f8")
+            elif selected:
+                styled.append("┃ ", style="#8ab4f8")
+            else:
+                styled.append("  ")
+            styled.append_text(row)
+            out.append_text(styled)
+        else:
+            out.append("  ")
+            out.append_text(row)
+    return out
 
 
 def review_comment_markers(
@@ -412,45 +585,6 @@ def format_review_comments(comments: Sequence[ReviewComment]) -> str:
     while blocks and blocks[-1] in {"", "---"}:
         blocks.pop()
     return "\n".join(blocks).rstrip()
-
-
-def _inline_comment_rows(comments: Sequence[ReviewComment]) -> list[Text]:
-    rows: list[Text] = []
-    for thread in group_review_threads(comments):
-        for depth, comment in enumerate(thread):
-            author = comment.author or "unknown"
-            when = f" · {comment.created_at}" if comment.created_at else ""
-            loc = _comment_location(comment)
-            head = Text()
-            head.append(f"{'':>4} {'':>4} │ ", style="dim")
-            if depth == 0 and len(thread) == 1:
-                branch = "● "
-            elif depth == 0:
-                branch = "┌ "
-            elif depth == len(thread) - 1:
-                branch = "└ "
-            else:
-                branch = "├ "
-            head.append(branch, style="bold yellow")
-            head.append(author, style="bold yellow")
-            if depth:
-                head.append(" (reply)", style="yellow")
-            else:
-                head.append(f" · {loc}", style="dim yellow")
-            head.append(when, style="dim yellow")
-            rows.append(head)
-            body = (comment.body or "(empty)").splitlines() or ["(empty)"]
-            for line in body:
-                row = Text()
-                row.append(f"{'':>4} {'':>4} │ ", style="dim")
-                row.append("│ ", style="yellow")
-                row.append(("  " * depth) + line, style="#fdd663 on #2b313b")
-                rows.append(row)
-        spacer = Text()
-        spacer.append(f"{'':>4} {'':>4} │ ", style="dim")
-        spacer.append("╰──", style="dim yellow")
-        rows.append(spacer)
-    return rows
 
 
 def _diff_file_paths(header: str, chunk: Sequence[str]) -> Tuple[str, str]:
@@ -658,6 +792,98 @@ class GithubPullsBackend:
             raise PullsError(
                 f"Could not load diff for {self.repository}#{key}: {error}"
             ) from error
+
+    def head_sha(self, number: Union[int, str]) -> str:
+        key = str(number).lstrip("#")
+        command = [
+            "gh",
+            "api",
+            f"repos/{self.repository}/pulls/{key}",
+            "--jq",
+            ".head.sha",
+        ]
+        try:
+            sha = run_text(command, timeout=self.timeout).strip()
+        except ProcessError as error:
+            raise PullsError(
+                f"Could not resolve head SHA for {self.repository}#{key}: {error}"
+            ) from error
+        if not sha:
+            raise PullsError(f"Empty head SHA for {self.repository}#{key}")
+        return sha
+
+    def submit_review(
+        self,
+        number: Union[int, str],
+        event: str,
+        *,
+        body: str = "",
+        comments: Sequence[Mapping[str, Any]] = (),
+    ) -> None:
+        """Create and submit a PR review with optional inline comments.
+
+        ``event`` is ``APPROVE``, ``REQUEST_CHANGES``, or ``COMMENT``.
+        Each comment mapping uses GitHub fields: path, side, line, body,
+        and optional start_line / start_side.
+        """
+        key = str(number).lstrip("#")
+        event_key = event.strip().upper()
+        if event_key not in {"APPROVE", "REQUEST_CHANGES", "COMMENT"}:
+            raise PullsError(f"Unsupported review event: {event}")
+        commit_id = self.head_sha(key)
+        payload: dict[str, Any] = {
+            "commit_id": commit_id,
+            "event": event_key,
+            "body": body or "",
+        }
+        api_comments = []
+        for item in comments:
+            path = str(item.get("path") or "")
+            line = int(item.get("line") or 0)
+            comment_body = str(item.get("body") or "")
+            if not path or line <= 0 or not comment_body.strip():
+                continue
+            side = str(item.get("side") or "RIGHT").upper()
+            if side not in {"LEFT", "RIGHT"}:
+                side = "RIGHT"
+            entry: dict[str, Any] = {
+                "path": path,
+                "side": side,
+                "line": line,
+                "body": comment_body,
+            }
+            start = item.get("start_line")
+            if start is not None:
+                start_line = int(start)
+                if start_line > 0 and start_line != line:
+                    entry["start_line"] = start_line
+                    entry["start_side"] = side
+            api_comments.append(entry)
+        if api_comments:
+            payload["comments"] = api_comments
+        command = [
+            "gh",
+            "api",
+            "--method",
+            "POST",
+            f"repos/{self.repository}/pulls/{key}/reviews",
+            "--input",
+            "-",
+        ]
+        try:
+            run_json(
+                command,
+                timeout=max(self.timeout, 60),
+                input_text=_json_dumps(payload),
+            )
+        except ProcessError as error:
+            raise PullsError(
+                f"Could not submit review for {self.repository}#{key}: {error}"
+            ) from error
+
+
+def _json_dumps(payload: Mapping[str, Any]) -> str:
+    return json.dumps(payload)
 
 
 def _parse_checks_fallback(error: ProcessError) -> list:

@@ -229,6 +229,26 @@ class PullsController:
         self.diff_cache[pull.stable_id] = diff
         return diff, None
 
+    def submit_review(
+        self,
+        pull: PullSummary,
+        event: str,
+        *,
+        body: str = "",
+        comments: Sequence[dict] = (),
+    ) -> Optional[str]:
+        """Submit a review; returns an error string or None on success."""
+        if self.backend is None:
+            return "No GitHub repository resolved for pull requests."
+        try:
+            self.backend.submit_review(
+                pull.number, event, body=body, comments=comments
+            )
+        except Exception as error:
+            return str(error) or type(error).__name__
+        self.detail_cache.pop(pull.stable_id, None)
+        return None
+
     def change_assignee_filter(
         self,
         state: PullListState,
