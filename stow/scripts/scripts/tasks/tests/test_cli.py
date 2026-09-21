@@ -39,7 +39,14 @@ class ParserTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 main(["--gh", "--project", "PROJ"])
             with self.assertRaises(SystemExit):
-                main(["--jira", "--repo", "owner/repo"])
+                main(["--jira", "--search", "is:issue"])
+
+    def test_allows_repo_with_jira_for_pull_requests(self):
+        parser = build_parser()
+        args = parser.parse_args(["--jira", "--project", "PROJ", "--repo", "owner/repo"])
+        self.assertTrue(args.jira)
+        self.assertEqual(args.repo, "owner/repo")
+        self.assertEqual(args.project, "PROJ")
 
 
 class AdapterTests(unittest.TestCase):
@@ -113,14 +120,17 @@ class AdapterTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
+    @patch("tasks.cli.resolve_github_repository", return_value=None)
     @patch("tasks.cli.load_assignee_filter")
     @patch("tasks.tui.run")
     @patch("tasks.cli.JiraBackend")
     @patch("tasks.cli.load_config")
     def test_resolves_direct_jira_identity_before_tui(
-        self, load_config, backend_type, run, load_filter
+        self, load_config, backend_type, run, load_filter, _resolve
     ):
         load_config.return_value.jira.default_project = "OTHER"
+        load_config.return_value.github.default_repo = None
+        load_config.return_value.github.limit = 100
         load_filter.return_value = FilterLoadResult(AssigneeFilter.ME)
         backend = backend_type.return_value
 
@@ -208,14 +218,17 @@ class MainTests(unittest.TestCase):
         save_filter.assert_called_once_with("github:owner/repo", AssigneeFilter.ME_OR_UNASSIGNED)
         clear_filter.assert_called_once_with("github:owner/repo")
 
+    @patch("tasks.cli.resolve_github_repository", return_value=None)
     @patch("tasks.cli.load_assignee_filter")
     @patch("tasks.tui.run")
     @patch("tasks.cli.JiraBackend")
     @patch("tasks.cli.load_config")
     def test_filter_load_warning_falls_back_to_all(
-        self, load_config, backend_type, run, load_filter
+        self, load_config, backend_type, run, load_filter, _resolve
     ):
         load_config.return_value.jira.default_project = "PROJ"
+        load_config.return_value.github.default_repo = None
+        load_config.return_value.github.limit = 100
         load_filter.return_value = FilterLoadResult(
             warning="Could not read filter state filters.yaml: invalid YAML"
         )

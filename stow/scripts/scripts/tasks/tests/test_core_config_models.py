@@ -44,12 +44,20 @@ github:
   default_repo: Owner/Repo
   limit: 50
   search: label:ready
+  pull_excludes:
+    Owner/Repo:
+      - apps/web/src/api/generated/**
+      - "**/*.Designer.cs"
 """,
             )
             config = load_config(path)
         self.assertEqual(config.jira.default_project, "PROJ")
         self.assertEqual(config.github.default_repo, "Owner/Repo")
         self.assertEqual(config.github.search, "label:ready")
+        self.assertEqual(
+            config.github.pull_excludes["owner/repo"],
+            ("apps/web/src/api/generated/**", "**/*.Designer.cs"),
+        )
 
     def test_rejects_unknown_keys(self):
         with tempfile.TemporaryDirectory() as directory:

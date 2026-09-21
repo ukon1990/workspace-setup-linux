@@ -580,8 +580,11 @@ class AppSmokeTests(unittest.TestCase):
 
         backend = FakeBackend()
         controller = TasksController(backend)
+        from tasks.tui.pulls import PullsController
+
         app = TasksApp(
             controller,
+            PullsController(None),
             initial_tasks=backend.tasks,
             load_list_on_mount=False,
         )
@@ -609,8 +612,11 @@ class AppSmokeTests(unittest.TestCase):
             backend.tasks[0].identity.stable_id: TaskDetail(backend.tasks[0], description="")
         }
         controller = TasksController(backend)
+        from tasks.tui.pulls import PullsController
+
         app = TasksApp(
             controller,
+            PullsController(None),
             initial_identity=backend.tasks[0].identity,
             load_list_on_mount=False,
         )

@@ -98,3 +98,56 @@ class TaskDetail:
     @property
     def identity(self) -> BackendIdentity:
         return self.summary.identity
+
+
+class CiState(str, Enum):
+    PASS = "pass"
+    FAIL = "fail"
+    PENDING = "pending"
+    SKIPPING = "skipping"
+    CANCEL = "cancel"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class CiCheck:
+    name: str
+    state: CiState
+    bucket: Optional[str] = None
+    link: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class PullSummary:
+    repository: str
+    number: int
+    title: str
+    status: str
+    author: str = ""
+    assignees: Tuple[str, ...] = field(default_factory=tuple)
+    labels: Tuple[str, ...] = field(default_factory=tuple)
+    url: Optional[str] = None
+    is_draft: bool = False
+    ci_state: CiState = CiState.UNKNOWN
+    review_decision: Optional[str] = None
+
+    @property
+    def display_key(self) -> str:
+        return f"{self.repository}#{self.number}"
+
+    @property
+    def stable_id(self) -> str:
+        return f"github-pr:{self.repository}:{self.number}"
+
+
+@dataclass(frozen=True)
+class PullDetail:
+    summary: PullSummary
+    description: str = ""
+    comments: Tuple[Comment, ...] = field(default_factory=tuple)
+    checks: Tuple[CiCheck, ...] = field(default_factory=tuple)
+    diff: str = ""
+
+    @property
+    def stable_id(self) -> str:
+        return self.summary.stable_id

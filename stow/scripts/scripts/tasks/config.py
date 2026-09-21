@@ -3,14 +3,14 @@
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Tuple, Union
 
 import yaml
 
 DEFAULT_CONFIG_PATH = Path("~/.config/tasks/config.yaml")
 _TOP_LEVEL_KEYS = {"jira", "github"}
 _JIRA_KEYS = {"default_project", "limit", "jql_extra"}
-_GITHUB_KEYS = {"default_repo", "limit", "search"}
+_GITHUB_KEYS = {"default_repo", "limit", "search", "pull_excludes"}
 _PROJECT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _REPOSITORY_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
 
@@ -31,6 +31,8 @@ class GithubConfig:
     default_repo: Optional[str] = None
     limit: int = 100
     search: Optional[str] = None
+    # owner/repo -> glob or path-prefix patterns excluded from PR line totals
+    pull_excludes: Mapping[str, Tuple[str, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,7 @@ def load_config(path: Optional[Union[str, Path]] = None) -> TasksConfig:
             default_repo=repository,
             limit=_limit(github_raw, "limit", GithubConfig.limit, "github"),
             search=_optional_string(github_raw, "search", "github"),
+            pull_excludes=_pull_excludes(github_raw),
         ),
     )
 
@@ -110,6 +113,32 @@ def _optional_string(section: Mapping[str, Any], key: str, name: str) -> Optiona
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{name}.{key} must be a non-empty string")
     return value.strip()
+
+
+def _pull_excludes(section: Mapping[str, Any]) -> Mapping[str, Tuple[str, ...]]:
+    raw = section.get("pull_excludes")
+    if raw is None:
+        return {}
+    mapping = _mapping(raw, "github.pull_excludes")
+    result: dict[str, Tuple[str, ...]] = {}
+    for repo, patterns in mapping.items():
+        if not isinstance(repo, str) or not _REPOSITORY_RE.fullmatch(repo.strip()):
+            raise ConfigError(
+                "github.pull_excludes keys must use owner/repository format"
+            )
+        if not isinstance(patterns, list) or not patterns:
+            raise ConfigError(
+                f"github.pull_excludes.{repo.strip()} must be a non-empty list of patterns"
+            )
+        cleaned: list[str] = []
+        for pattern in patterns:
+            if not isinstance(pattern, str) or not pattern.strip():
+                raise ConfigError(
+                    f"github.pull_excludes.{repo.strip()} patterns must be non-empty strings"
+                )
+            cleaned.append(pattern.strip().replace("\\", "/"))
+        result[repo.strip().lower()] = tuple(cleaned)
+    return result
 
 
 def _limit(section: Mapping[str, Any], key: str, default: int, name: str) -> int:

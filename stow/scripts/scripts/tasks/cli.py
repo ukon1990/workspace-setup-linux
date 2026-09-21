@@ -17,6 +17,7 @@ from .filters import (
 from .github import GithubBackend, GithubError
 from .jira import JiraBackend, JiraError
 from .models import Backend, BackendIdentity, TaskDetail, TaskSummary
+from .pulls import GithubPullsBackend, resolve_github_repository
 from .references import github_identity, jira_identity
 
 if TYPE_CHECKING:
@@ -120,12 +121,12 @@ def build_parser() -> argparse.ArgumentParser:
     backend.add_argument("--gh", action="store_true", help="use GitHub Issues through gh")
     parser.add_argument("target", nargs="?", help="issue key, number, qualified reference, or URL")
     parser.add_argument("--project", type=_project, help="Jira project key")
-    parser.add_argument("--repo", type=_repository, help="GitHub repository in owner/repo form")
+    parser.add_argument("--repo", type=_repository, help="GitHub repository in owner/repo form (issues and/or PRs)")
     parser.add_argument("--query", help="start with a backend search")
     parser.add_argument("--limit", type=_limit, help="maximum issues to load (1-1000)")
     parser.add_argument("--config", help="YAML config path")
     parser.add_argument("--jql-extra", help="additional Jira JQL clause")
-    parser.add_argument("--search", help="additional GitHub search qualifiers")
+    parser.add_argument("--search", help="additional GitHub issue search qualifiers (with --gh)")
     return parser
 
 
@@ -149,8 +150,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 def _run_jira(
     parser: argparse.ArgumentParser, args: argparse.Namespace, config: TasksConfig
 ) -> None:
-    if args.repo or args.search:
-        parser.error("--repo and --search are only valid with --gh")
+    if args.search:
+        parser.error("--search is only valid with --gh")
 
     identity = jira_identity(args.target) if args.target else None
     if args.target and identity is None:
@@ -172,7 +173,21 @@ def _run_jira(
         limit=args.limit,
         jql_extra=args.jql_extra,
     )
-    _run_tui(adapter, f"jira:{project.upper()}", identity, args.query)
+    pulls, pulls_error = _make_pulls_backend(
+        explicit=args.repo,
+        config_default=config.github.default_repo,
+        limit=args.limit or config.github.limit,
+    )
+    excludes = _pull_excludes_for(config, pulls.repository if pulls else "")
+    _run_tui(
+        adapter,
+        f"jira:{project.upper()}",
+        identity,
+        args.query,
+        pulls_backend=pulls,
+        pulls_error=pulls_error,
+        pull_excludes=excludes,
+    )
 
 
 def _run_github(
@@ -200,7 +215,54 @@ def _run_github(
         if identity is None:
             parser.error("GitHub target must be a number, owner/repo#number, or issue URL")
     adapter = GithubTuiBackend(backend, repository)
-    _run_tui(adapter, f"github:{repository.lower()}", identity, args.query)
+    pulls, pulls_error = _make_pulls_backend(
+        explicit=repository,
+        config_default=None,
+        limit=args.limit or config.github.limit,
+    )
+    excludes = _pull_excludes_for(config, repository)
+    _run_tui(
+        adapter,
+        f"github:{repository.lower()}",
+        identity,
+        args.query,
+        pulls_backend=pulls,
+        pulls_error=pulls_error,
+        pull_excludes=excludes,
+    )
+
+
+def _make_pulls_backend(
+    *,
+    explicit: Optional[str],
+    config_default: Optional[str],
+    limit: int,
+) -> tuple[Optional[GithubPullsBackend], Optional[str]]:
+    repository = resolve_github_repository(
+        explicit=explicit,
+        config_default=config_default,
+    )
+    if repository is None:
+        return None, (
+            "No GitHub repository for pull requests. "
+            "Pass --repo owner/repo, set github.default_repo, or run inside a GitHub checkout."
+        )
+    try:
+        return GithubPullsBackend(repository, limit=limit), None
+    except (ValueError, GithubError) as error:
+        return None, str(error)
+
+
+def _pull_excludes_for(config: TasksConfig, repository: str) -> tuple[str, ...]:
+    if not repository:
+        return ()
+    mapping = getattr(config.github, "pull_excludes", None)
+    if not isinstance(mapping, dict):
+        return ()
+    patterns = mapping.get(repository.lower(), ())
+    if not isinstance(patterns, (list, tuple)):
+        return ()
+    return tuple(item for item in patterns if isinstance(item, str) and item.strip())
 
 
 def _run_tui(
@@ -208,6 +270,10 @@ def _run_tui(
     scope: str,
     identity: Optional[BackendIdentity],
     query: Optional[str],
+    *,
+    pulls_backend: Optional[GithubPullsBackend] = None,
+    pulls_error: Optional[str] = None,
+    pull_excludes: Sequence[str] = (),
 ) -> None:
     from .tui import run
 
@@ -228,6 +294,9 @@ def _run_tui(
         initial_assignee_filter=loaded.selection,
         on_assignee_filter_change=persist,
         cache_scope=scope,
+        pulls_backend=pulls_backend,
+        pulls_error=pulls_error,
+        pull_excludes=pull_excludes,
     )
 
 

@@ -23,6 +23,20 @@ Footer {
     background: #1a1d23;
 }
 
+#tab-bar {
+    height: 1;
+    padding: 0 1;
+    color: #9aa0a6;
+    background: #252a33;
+}
+
+#pr-tab-bar {
+    height: 1;
+    padding: 0 1;
+    color: #9aa0a6;
+    background: #252a33;
+}
+
 #status-bar.error {
     color: #f28b82;
 }
@@ -64,7 +78,8 @@ Footer {
 }
 
 #content-pane {
-    width: 2fr;
+    width: 1fr;
+    height: 1fr;
     border: solid #3d4f66;
     border-title-color: #8ab4f8;
     padding: 0 1;
@@ -83,6 +98,46 @@ Footer {
 
 #relations-pane.focused-pane {
     border: tall #81c995;
+}
+
+#diff-side {
+    width: 1fr;
+    height: 1fr;
+}
+
+#file-list {
+    width: 1fr;
+    height: 1fr;
+    border: solid #3d4f66;
+    border-title-color: #fdd663;
+    padding: 0;
+    background: #1a1d23;
+}
+
+#file-list.focused-pane {
+    border: tall #fdd663;
+}
+
+#file-list > .option-list--option {
+    padding: 0 1;
+}
+
+#diff-pane {
+    width: 2fr;
+    height: 1fr;
+    border: solid #3d4f66;
+    border-title-color: #c58af9;
+    padding: 0 1;
+}
+
+#diff-pane.focused-pane {
+    border: tall #c58af9;
+}
+
+#diff-body {
+    height: auto;
+    color: #e8eaed;
+    text-style: none;
 }
 
 #content-body {
