@@ -1,7 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOURCE="$(readlink -f "${BASH_SOURCE[0]}")"
+resolve_path() {
+    local source="$1" directory
+    while [[ -L "$source" ]]; do
+        directory="$(cd -P "$(dirname "$source")" && pwd)"
+        source="$(readlink "$source")"
+        [[ "$source" == /* ]] || source="$directory/$source"
+    done
+    if [[ -d "$source" ]]; then
+        (cd -P "$source" && pwd)
+    else
+        directory="$(cd -P "$(dirname "$source")" && pwd)"
+        printf '%s/%s\n' "$directory" "$(basename "$source")"
+    fi
+}
+
+relative_path() {
+    python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$1" "$2"
+}
+
+SOURCE="$(resolve_path "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 STOW_DIR="$REPO_ROOT/stow"
@@ -27,11 +46,11 @@ normalize_matching_symlinks() {
             dst="$HOME/${src#"$STOW_DIR/$package/"}"
             [[ -L "$dst" ]] || continue
 
-            src_resolved="$(readlink -f "$src" 2>/dev/null || true)"
-            dst_resolved="$(readlink -f "$dst" 2>/dev/null || true)"
+            src_resolved="$(resolve_path "$src" 2>/dev/null || true)"
+            dst_resolved="$(resolve_path "$dst" 2>/dev/null || true)"
             [[ -n "$src_resolved" && "$src_resolved" == "$dst_resolved" ]] || continue
 
-            rel_target="$(realpath --relative-to="$(dirname "$dst")" "$src")"
+            rel_target="$(relative_path "$src" "$(dirname "$dst")")"
             if [[ "$DRY_RUN" == 1 ]]; then
                 echo "Would normalize matching symlink: $dst -> $rel_target"
             else
@@ -78,7 +97,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ $restow_all -eq 1 ]]; then
-    mapfile -t packages < <(find "$STOW_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
+    packages=()
+    while IFS= read -r package; do
+        [[ -n "$package" ]] || continue
+        packages+=("$(basename "$package")")
+    done < <(find "$STOW_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
 fi
 
 if [[ ${#packages[@]} -eq 0 ]]; then
@@ -97,12 +120,65 @@ fi
 
 echo 'Restowing packages:'
 printf ' - %s\n' "${packages[@]}"
+echo
 
 normalize_matching_symlinks
 
-stow_args=(-d "$STOW_DIR" -R -t "$HOME")
-if [[ "$DRY_RUN" == 1 ]]; then
-    stow_args=(-n "${stow_args[@]}")
-fi
+ok=()
+skipped_conflicts=()
+failed=()
 
-exec stow "${stow_args[@]}" "${stow_extra_args[@]}" "${packages[@]}"
+restow_pkg() {
+    local pkg="$1"
+    local args=(-d "$STOW_DIR" -R -t "$HOME")
+    local output="" status=0
+
+    [[ "$DRY_RUN" == 1 ]] && args+=(-n)
+    args+=("${stow_extra_args[@]}" "$pkg")
+
+    echo "==> restow $pkg"
+    set +e
+    output="$(stow "${args[@]}" 2>&1)"
+    status=$?
+    set -e
+
+    [[ -n "$output" ]] && printf '%s\n' "$output"
+
+    if [[ $status -eq 0 ]]; then
+        ok+=("$pkg")
+        return 0
+    fi
+
+    if printf '%s\n' "$output" | grep -qi 'would cause conflicts\|existing target'; then
+        echo "Skipping $pkg due to existing files (not adopting)."
+        skipped_conflicts+=("$pkg")
+        return 0
+    fi
+
+    echo "Failed to restow $pkg (exit $status)"
+    failed+=("$pkg")
+}
+
+for package in "${packages[@]}"; do
+    restow_pkg "$package"
+    echo
+done
+
+echo '==> Restow report'
+if [[ ${#ok[@]} -gt 0 ]]; then
+    echo 'Ok:'
+    printf '  - %s\n' "${ok[@]}"
+else
+    echo 'Ok: (none)'
+fi
+if [[ ${#skipped_conflicts[@]} -gt 0 ]]; then
+    echo 'Skipped (conflicts with existing files):'
+    printf '  - %s\n' "${skipped_conflicts[@]}"
+    echo "Resolve with: restow --adopt ${skipped_conflicts[*]}"
+fi
+if [[ ${#failed[@]} -gt 0 ]]; then
+    echo 'Failed:'
+    printf '  - %s\n' "${failed[@]}"
+    exit 1
+fi
+echo 'Failed: (none)'

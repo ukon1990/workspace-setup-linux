@@ -1,8 +1,12 @@
 # The following lines were added by Docker Desktop to add commands to your PATH.
-export PATH="$PATH:/Users/jonas/.docker/bin"
+if test -d "$HOME/.docker/bin"
+    set -gx PATH $PATH "$HOME/.docker/bin"
+end
 # End of Docker Desktop section.
 
-source /usr/share/cachyos-fish-config/cachyos-config.fish
+if test -f /usr/share/cachyos-fish-config/cachyos-config.fish
+    source /usr/share/cachyos-fish-config/cachyos-config.fish
+end
 
 set -l podman_socket /run/user/(id -u)/podman/podman.sock
 if test -S $podman_socket
@@ -17,5 +21,5 @@ end
 #end
 
 
-# Added by Antigravity CLI installer
-set -gx PATH "/home/jonas/.local/bin" $PATH
+# User local binaries (restow and other helpers)
+fish_add_path "$HOME/.local/bin"
