@@ -24,6 +24,7 @@ from ..models import (
     TaskRelationship,
     TaskSummary,
 )
+from ..references import github_identity, jira_identity
 
 _DONE_STATUSES = frozenset(
     {
@@ -281,6 +282,24 @@ ASSIGNEE_FILTER_OPTIONS: tuple[tuple[AssigneeFilter, str, str], ...] = (
 def set_filter(state: ListState, value: str) -> None:
     state.filter_text = value
     state.index = 0
+
+
+def resolve_goto_identity(
+    backend: TaskBackend, value: str
+) -> Optional[BackendIdentity]:
+    """Parse a direct issue/task ID for the active backend, or None if invalid."""
+    stripped = value.strip()
+    if not stripped:
+        return None
+    label = getattr(backend, "backend_label", "").casefold()
+    if label == "jira":
+        return jira_identity(stripped)
+    default_repo = getattr(backend, "repository", None) or getattr(
+        backend, "scope_label", None
+    )
+    if isinstance(default_repo, str) and not default_repo.strip():
+        default_repo = None
+    return github_identity(stripped, default_repo=default_repo)
 
 
 def selected_task(state: ListState) -> Optional[TaskSummary]:

@@ -44,6 +44,7 @@ from .logic import (
     detail_content_text,
     filter_tasks,
     format_sync_progress,
+    resolve_goto_identity,
     selected_task,
     set_filter,
     task_url,
@@ -98,6 +99,7 @@ HELP_MARKDOWN = """\
 | `a` | Author filter (PRs; Space toggle, Enter confirm) |
 | `c` | Clear filters |
 | `s` | Backend search |
+| `g` | Open issue/task by ID |
 | `r` | Refresh (changed since last sync) |
 | `R` | Full reload (replace cache) |
 | `Tab` | Cycle focus within current PR tab |
@@ -430,6 +432,7 @@ class ListScreen(Screen):
         Binding("a", "author_filter", "Author", show=True),
         Binding("c", "clear_filters", "Clear", show=True),
         Binding("s", "search", "Search", show=True),
+        Binding("g", "goto", "Goto", show=True),
         Binding("r", "refresh", "Refresh", show=True),
         Binding("R", "full_reload", "Full", show=True),
         Binding("o", "open_url", "Open URL", show=True),
@@ -1036,6 +1039,23 @@ class ListScreen(Screen):
     def action_clear_filters(self) -> None:
         self.clear_filters_worker()
 
+    def action_goto(self) -> None:
+        def apply(value: Optional[str]) -> None:
+            if value is None:
+                return
+            identity = resolve_goto_identity(self.controller.backend, value)
+            if identity is None:
+                status = self.query_one("#status-bar", Static)
+                status.update(f"Invalid issue ID: {value.strip() or '(empty)'}")
+                status.add_class("error")
+                return
+            self.app.push_screen(DetailScreen(self.controller, identity))
+
+        self.app.push_screen(
+            InputModal("Open by ID", placeholder="FORSC-8207 or #42…"),
+            apply,
+        )
+
     def action_search(self) -> None:
         def apply(value: Optional[str]) -> None:
             if value is None:
@@ -1124,6 +1144,7 @@ class DetailScreen(Screen):
         Binding("enter", "open_relationship", "Open", show=True),
         Binding("tab", "toggle_focus", "Focus", show=True),
         Binding("s", "search", "Search", show=True),
+        Binding("g", "goto", "Goto", show=True),
         Binding("r", "refresh", "Refresh", show=True),
         Binding("o", "open_url", "Open URL", show=True),
         Binding("question_mark", "help", "Help", show=True),
@@ -1311,6 +1332,23 @@ class DetailScreen(Screen):
             )
 
         self.app.push_screen(InputModal("Backend search", placeholder="search…"), apply)
+
+    def action_goto(self) -> None:
+        def apply(value: Optional[str]) -> None:
+            if value is None:
+                return
+            identity = resolve_goto_identity(self.controller.backend, value)
+            if identity is None:
+                status = self.query_one("#status-bar", Static)
+                status.update(f"Invalid issue ID: {value.strip() or '(empty)'}")
+                status.add_class("error")
+                return
+            self.app.push_screen(DetailScreen(self.controller, identity))
+
+        self.app.push_screen(
+            InputModal("Open by ID", placeholder="FORSC-8207 or #42…"),
+            apply,
+        )
 
     def action_refresh(self) -> None:
         self.reload_detail(refresh=True)

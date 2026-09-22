@@ -37,6 +37,7 @@ from tasks.tui import (
     is_done,
     is_done_status,
     relationship_line,
+    resolve_goto_identity,
     selected_task,
     set_filter,
     sort_tasks,
@@ -97,7 +98,58 @@ class FakeBackend:
         return self.details[identity.stable_id]
 
 
+class FakeJiraBackend:
+    backend_label = "Jira"
+    scope_label = "FORSC"
+
+    def __init__(self):
+        identity = BackendIdentity.jira("FORSC-8207")
+        self.tasks = [
+            TaskSummary(identity, "Goto target", "In Progress", task_type="Task")
+        ]
+        self.details = {
+            identity.stable_id: TaskDetail(self.tasks[0], description="body")
+        }
+
+    def list_tasks(self, query=None, refresh=False, assignee_filter=AssigneeFilter.ALL, **_kwargs):
+        return self.tasks
+
+    def get_task(self, identity, refresh=False):
+        return self.details[identity.stable_id]
+
+
 class HelperTests(unittest.TestCase):
+    def test_resolve_goto_identity_github_and_jira(self):
+        gh = FakeBackend()
+        self.assertEqual(
+            resolve_goto_identity(gh, "#2").stable_id,
+            "github:owner/repo:2",
+        )
+        self.assertEqual(
+            resolve_goto_identity(gh, "2").stable_id,
+            "github:owner/repo:2",
+        )
+        self.assertEqual(
+            resolve_goto_identity(gh, "acme/app#9").stable_id,
+            "github:acme/app:9",
+        )
+        self.assertIsNone(resolve_goto_identity(gh, "not-an-id"))
+        self.assertIsNone(resolve_goto_identity(gh, ""))
+
+        jira = FakeJiraBackend()
+        self.assertEqual(
+            resolve_goto_identity(jira, "FORSC-8207").stable_id,
+            "jira:FORSC-8207",
+        )
+        self.assertEqual(
+            resolve_goto_identity(
+                jira, "https://jira.example/browse/FORSC-8207"
+            ).stable_id,
+            "jira:FORSC-8207",
+        )
+        self.assertIsNone(resolve_goto_identity(jira, "42"))
+        self.assertIsNone(resolve_goto_identity(jira, "garbage"))
+
     def test_assignee_filter_labels_and_keys(self):
         expected = {
             "a": (AssigneeFilter.ALL, "all"),
@@ -632,6 +684,34 @@ class AppSmokeTests(unittest.TestCase):
 
         with patch("tasks.tui.screens.webbrowser.open", side_effect=opened.append):
             app.run(headless=True, auto_pilot=run_pilot)
+
+    def test_goto_opens_detail_by_id(self):
+        from tasks.tui.app import TasksApp
+        from tasks.tui.pulls import PullsController
+        from tasks.tui.screens import DetailScreen, InputModal
+
+        backend = FakeBackend()
+        controller = TasksController(backend)
+        app = TasksApp(
+            controller,
+            PullsController(None),
+            initial_tasks=backend.tasks,
+            load_list_on_mount=False,
+        )
+
+        async def run_pilot(pilot):
+            await pilot.pause()
+            await pilot.press("g")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, InputModal)
+            await pilot.press("2")
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, DetailScreen)
+            self.assertEqual(app.screen.identity.stable_id, "github:owner/repo:2")
+            await pilot.press("q")
+
+        app.run(headless=True, auto_pilot=run_pilot)
 
 
 if __name__ == "__main__":
