@@ -228,6 +228,8 @@ class AssigneeFilterModal(ModalScreen[Optional[AssigneeFilter]]):
 class AuthorFilterModal(ModalScreen[Optional[frozenset[str]]]):
     """Multi-select authors from the loaded PR list; Space toggles, Enter confirms."""
 
+    ALL_ID = "__all__"
+
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=True),
         Binding("enter", "confirm", "Confirm", show=True, priority=True),
@@ -249,8 +251,11 @@ class AuthorFilterModal(ModalScreen[Optional[frozenset[str]]]):
         with Vertical(classes="modal-box", id="author-filter-modal"):
             yield Label("Author filter")
             yield Input(placeholder="search authors…", id="author-search")
+            yield Label("", id="author-empty-hint")
             yield OptionList(id="author-options")
-            yield Label("Space toggle · Enter confirm · Esc cancel")
+            yield Label(
+                "Space toggle · Enter confirm · empty = no author filter · Esc cancel"
+            )
 
     def on_mount(self) -> None:
         self._rebuild_options()
@@ -262,12 +267,26 @@ class AuthorFilterModal(ModalScreen[Optional[frozenset[str]]]):
             return list(self._authors)
         return [name for name in self._authors if needle in name.casefold()]
 
+    def _all_prompt(self) -> str:
+        mark = "x" if not self._selected else " "
+        return f"[{mark}] All authors"
+
     def _option_prompt(self, name: str) -> str:
         mark = "x" if name in self._selected else " "
         return f"[{mark}] {name}"
 
     def _rebuild_options(self, *, keep: Optional[str] = None) -> None:
         options_list = self.query_one("#author-options", OptionList)
+        hint = self.query_one("#author-empty-hint", Label)
+        if not self._authors:
+            hint.update(
+                "No authors yet — load PRs first (check assignee filter with f, or refresh)"
+            )
+            hint.display = True
+        else:
+            hint.update("")
+            hint.display = False
+
         highlighted = keep
         if highlighted is None and options_list.highlighted is not None:
             try:
@@ -276,15 +295,15 @@ class AuthorFilterModal(ModalScreen[Optional[frozenset[str]]]):
                     highlighted = str(option.id)
             except Exception:
                 highlighted = None
+
         visible = self._visible_authors()
         options_list.clear_options()
-        if not visible:
-            return
-        options_list.add_options(
-            [Option(self._option_prompt(name), id=name) for name in visible]
-        )
-        if highlighted in visible:
-            options_list.highlighted = visible.index(highlighted)
+        rows = [Option(self._all_prompt(), id=self.ALL_ID)]
+        rows.extend(Option(self._option_prompt(name), id=name) for name in visible)
+        options_list.add_options(rows)
+        ids = [self.ALL_ID, *visible]
+        if highlighted in ids:
+            options_list.highlighted = ids.index(highlighted)
         else:
             options_list.highlighted = 0
 
@@ -297,7 +316,7 @@ class AuthorFilterModal(ModalScreen[Optional[frozenset[str]]]):
     def on_search_submitted(self, event: Input.Submitted) -> None:
         self.action_confirm()
 
-    def _highlighted_author(self) -> Optional[str]:
+    def _highlighted_id(self) -> Optional[str]:
         options_list = self.query_one("#author-options", OptionList)
         if not options_list.option_count or options_list.highlighted is None:
             return None
@@ -311,17 +330,18 @@ class AuthorFilterModal(ModalScreen[Optional[frozenset[str]]]):
         if isinstance(focused, Input):
             focused.insert_text_at_cursor(" ")
             return
-        name = self._highlighted_author()
-        if name is None:
+        option_id = self._highlighted_id()
+        if option_id is None:
             return
-        if name in self._selected:
-            self._selected.discard(name)
+        if option_id == self.ALL_ID:
+            self._selected.clear()
+            self._rebuild_options(keep=self.ALL_ID)
+            return
+        if option_id in self._selected:
+            self._selected.discard(option_id)
         else:
-            self._selected.add(name)
-        options_list = self.query_one("#author-options", OptionList)
-        idx = options_list.highlighted
-        if idx is not None:
-            options_list.replace_option_prompt_at_index(idx, self._option_prompt(name))
+            self._selected.add(option_id)
+        self._rebuild_options(keep=option_id)
 
     def action_confirm(self) -> None:
         self.dismiss(frozenset(self._selected))
@@ -457,7 +477,7 @@ class ListScreen(Screen):
         self.state = state
         self.pulls_controller = pulls_controller or PullsController(None)
         self.pulls_state = self.pulls_controller.make_list_state(
-            assignee_filter=state.assignee_filter,
+            assignee_filter=AssigneeFilter.ALL,
             repo_error=pulls_error,
         )
         self._load_on_mount = load_on_mount

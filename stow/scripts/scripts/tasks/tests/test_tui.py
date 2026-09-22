@@ -713,6 +713,19 @@ class AppSmokeTests(unittest.TestCase):
 
         app.run(headless=True, auto_pilot=run_pilot)
 
+    def test_list_screen_pulls_start_with_assignee_all(self):
+        from tasks.tui.pulls import PullsController
+        from tasks.tui.screens import ListScreen
+
+        backend = FakeBackend()
+        controller = TasksController(
+            backend, initial_assignee_filter=AssigneeFilter.ME
+        )
+        state = controller.make_list_state(tasks=backend.tasks)
+        self.assertEqual(state.assignee_filter, AssigneeFilter.ME)
+        screen = ListScreen(controller, state, PullsController(None), load_on_mount=False)
+        self.assertEqual(screen.pulls_state.assignee_filter, AssigneeFilter.ALL)
+
 
 if __name__ == "__main__":
     unittest.main()

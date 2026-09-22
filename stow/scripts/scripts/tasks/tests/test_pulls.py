@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from tasks.filters import AssigneeFilter
 from tasks.models import CiState, Comment, PullDetail, PullSummary, ReviewComment
 from tasks.pr_views import activity_label, load_pr_viewed_at, mark_pr_viewed
 from tasks.pulls import (
@@ -451,6 +452,7 @@ class PullListHelperTests(unittest.TestCase):
             _pr(5, author="Bob"),
         ]
         self.assertEqual(authors_from_pulls(pulls), ["alice", "Bob", "zoe"])
+        self.assertEqual(authors_from_pulls([]), [])
 
     def test_visible_pulls_respects_author_filter(self):
         pulls = [
@@ -564,6 +566,13 @@ class PrViewsTests(unittest.TestCase):
 
 
 class PullsControllerTests(unittest.TestCase):
+    def test_make_list_state_defaults_assignee_to_all(self):
+        controller = PullsController(None)
+        state = controller.make_list_state()
+        self.assertEqual(state.assignee_filter, AssigneeFilter.ALL)
+        overridden = controller.make_list_state(assignee_filter=AssigneeFilter.ME)
+        self.assertEqual(overridden.assignee_filter, AssigneeFilter.ME)
+
     def test_load_list_and_detail_cache(self):
         backend = GithubPullsBackend("acme/app")
         summary = _pr(9, ci=CiState.PASS)
