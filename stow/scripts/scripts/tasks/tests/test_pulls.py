@@ -30,9 +30,12 @@ from tasks.review_views import (
 from tasks.tui.pulls import (
     PullListState,
     PullsController,
+    authors_from_pulls,
     filter_pulls,
+    filter_pulls_by_authors,
     format_pull_timestamp,
     pull_detail_markdown,
+    set_author_filter,
     set_pull_filter,
     sort_pulls,
     visible_pulls,
@@ -415,6 +418,57 @@ class PullListHelperTests(unittest.TestCase):
         self.assertEqual(len(visible_pulls(state_a)), 3)
         self.assertEqual([p.number for p in visible_pulls(state_b)], [2])
         self.assertEqual(state_a.index, 0)
+
+    def test_filter_pulls_by_authors(self):
+        pulls = [
+            _pr(1, author="zoe"),
+            _pr(2, author="alice"),
+            _pr(3, author="bob"),
+            _pr(4, author="alice"),
+        ]
+        self.assertEqual(
+            [p.number for p in filter_pulls_by_authors(pulls, frozenset())],
+            [1, 2, 3, 4],
+        )
+        self.assertEqual(
+            [p.number for p in filter_pulls_by_authors(pulls, frozenset({"alice"}))],
+            [2, 4],
+        )
+        self.assertEqual(
+            [
+                p.number
+                for p in filter_pulls_by_authors(pulls, frozenset({"alice", "bob"}))
+            ],
+            [2, 3, 4],
+        )
+
+    def test_authors_from_pulls_unique_sorted(self):
+        pulls = [
+            _pr(1, author="zoe"),
+            _pr(2, author="alice"),
+            _pr(3, author=""),
+            _pr(4, author="alice"),
+            _pr(5, author="Bob"),
+        ]
+        self.assertEqual(authors_from_pulls(pulls), ["alice", "Bob", "zoe"])
+
+    def test_visible_pulls_respects_author_filter(self):
+        pulls = [
+            _pr(1, title="Alpha", author="zoe"),
+            _pr(2, title="Beta", author="alice"),
+            _pr(3, title="Gamma", author="bob"),
+        ]
+        state = PullListState(pulls=list(pulls), sort_column=None)
+        set_author_filter(state, frozenset({"alice", "bob"}))
+        self.assertEqual([p.number for p in visible_pulls(state)], [2, 3])
+        self.assertEqual(state.index, 0)
+
+        set_pull_filter(state, "gamma")
+        self.assertEqual([p.number for p in visible_pulls(state)], [3])
+
+        set_author_filter(state, frozenset())
+        set_pull_filter(state, "")
+        self.assertEqual(len(visible_pulls(state)), 3)
 
     def test_default_sort_is_newest_updated(self):
         pulls = [

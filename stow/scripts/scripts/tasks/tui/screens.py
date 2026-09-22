@@ -52,10 +52,12 @@ from .logic import (
 from .pulls import (
     PULL_SORT_COLUMNS,
     PullsController,
+    authors_from_pulls,
     ci_label,
     format_pull_timestamp,
     pull_detail_markdown,
     selected_pull,
+    set_author_filter,
     set_pull_filter,
     visible_pulls,
 )
@@ -92,7 +94,8 @@ HELP_MARKDOWN = """\
 | `Space` | Expand / collapse tree node |
 | `t` | Toggle table / tree (Issues) |
 | `/` | Local text filter |
-| `f` | Assignee / author filter |
+| `f` | Assignee filter |
+| `a` | Author filter (PRs; Space toggle, Enter confirm) |
 | `c` | Clear filters |
 | `s` | Backend search |
 | `r` | Refresh (changed since last sync) |
@@ -220,6 +223,111 @@ class AssigneeFilterModal(ModalScreen[Optional[AssigneeFilter]]):
         self.dismiss(None)
 
 
+class AuthorFilterModal(ModalScreen[Optional[frozenset[str]]]):
+    """Multi-select authors from the loaded PR list; Space toggles, Enter confirms."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel", show=True),
+        Binding("enter", "confirm", "Confirm", show=True, priority=True),
+        Binding("space", "toggle", "Toggle", show=True, priority=True),
+    ]
+
+    def __init__(
+        self,
+        authors: Sequence[str],
+        *,
+        selected: frozenset[str] = frozenset(),
+    ) -> None:
+        super().__init__()
+        self._authors = list(authors)
+        self._selected = set(selected)
+        self._needle = ""
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="modal-box", id="author-filter-modal"):
+            yield Label("Author filter")
+            yield Input(placeholder="search authors…", id="author-search")
+            yield OptionList(id="author-options")
+            yield Label("Space toggle · Enter confirm · Esc cancel")
+
+    def on_mount(self) -> None:
+        self._rebuild_options()
+        self.query_one("#author-search", Input).focus()
+
+    def _visible_authors(self) -> list[str]:
+        needle = self._needle.casefold().strip()
+        if not needle:
+            return list(self._authors)
+        return [name for name in self._authors if needle in name.casefold()]
+
+    def _option_prompt(self, name: str) -> str:
+        mark = "x" if name in self._selected else " "
+        return f"[{mark}] {name}"
+
+    def _rebuild_options(self, *, keep: Optional[str] = None) -> None:
+        options_list = self.query_one("#author-options", OptionList)
+        highlighted = keep
+        if highlighted is None and options_list.highlighted is not None:
+            try:
+                option = options_list.get_option_at_index(options_list.highlighted)
+                if option.id is not None:
+                    highlighted = str(option.id)
+            except Exception:
+                highlighted = None
+        visible = self._visible_authors()
+        options_list.clear_options()
+        if not visible:
+            return
+        options_list.add_options(
+            [Option(self._option_prompt(name), id=name) for name in visible]
+        )
+        if highlighted in visible:
+            options_list.highlighted = visible.index(highlighted)
+        else:
+            options_list.highlighted = 0
+
+    @on(Input.Changed, "#author-search")
+    def on_search_changed(self, event: Input.Changed) -> None:
+        self._needle = event.value
+        self._rebuild_options()
+
+    @on(Input.Submitted, "#author-search")
+    def on_search_submitted(self, event: Input.Submitted) -> None:
+        self.action_confirm()
+
+    def _highlighted_author(self) -> Optional[str]:
+        options_list = self.query_one("#author-options", OptionList)
+        if not options_list.option_count or options_list.highlighted is None:
+            return None
+        option = options_list.get_option_at_index(options_list.highlighted)
+        if option.id is None:
+            return None
+        return str(option.id)
+
+    def action_toggle(self) -> None:
+        focused = self.focused
+        if isinstance(focused, Input):
+            focused.insert_text_at_cursor(" ")
+            return
+        name = self._highlighted_author()
+        if name is None:
+            return
+        if name in self._selected:
+            self._selected.discard(name)
+        else:
+            self._selected.add(name)
+        options_list = self.query_one("#author-options", OptionList)
+        idx = options_list.highlighted
+        if idx is not None:
+            options_list.replace_option_prompt_at_index(idx, self._option_prompt(name))
+
+    def action_confirm(self) -> None:
+        self.dismiss(frozenset(self._selected))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class HelpScreen(ModalScreen[None]):
     BINDINGS = [
         Binding("escape", "close", "Close", show=True),
@@ -319,6 +427,7 @@ class ListScreen(Screen):
         Binding("t", "toggle_view", "Tree", show=True),
         Binding("slash", "local_filter", "Filter", show=True),
         Binding("f", "assignee_filter", "Assignee", show=True),
+        Binding("a", "author_filter", "Author", show=True),
         Binding("c", "clear_filters", "Clear", show=True),
         Binding("s", "search", "Search", show=True),
         Binding("r", "refresh", "Refresh", show=True),
@@ -447,6 +556,12 @@ class ListScreen(Screen):
                 if self.pulls_state.filter_text
                 else ""
             )
+            authors = self.pulls_state.author_filter
+            author_label = (
+                f" · authors: {', '.join(sorted(authors, key=str.casefold))}"
+                if authors
+                else ""
+            )
             visible = len(self._visible_pulls())
             error = self.pulls_state.error or self.pulls_state.repo_error
             if error:
@@ -454,7 +569,7 @@ class ListScreen(Screen):
                 status.add_class("error")
             else:
                 status.update(
-                    f"Query: {query} · assignee: {assignee}{filter_label} · "
+                    f"Query: {query} · assignee: {assignee}{filter_label}{author_label} · "
                     f"{visible}/{len(self.pulls_state.pulls)}"
                 )
                 status.remove_class("error")
@@ -736,6 +851,7 @@ class ListScreen(Screen):
         try:
             if self._active_tab == "pulls":
                 set_pull_filter(self.pulls_state, "")
+                set_author_filter(self.pulls_state, frozenset())
                 self.pulls_controller.change_assignee_filter(
                     self.pulls_state,
                     AssigneeFilter.ALL,
@@ -897,6 +1013,25 @@ class ListScreen(Screen):
             self.apply_assignee_filter()
 
         self.app.push_screen(AssigneeFilterModal(), apply)
+
+    def action_author_filter(self) -> None:
+        if self._active_tab != "pulls":
+            return
+
+        def apply(selection: Optional[frozenset[str]]) -> None:
+            if selection is None:
+                return
+            set_author_filter(self.pulls_state, selection)
+            self._populate_pulls_table()
+            self._update_chrome()
+
+        self.app.push_screen(
+            AuthorFilterModal(
+                authors_from_pulls(self.pulls_state.pulls),
+                selected=self.pulls_state.author_filter,
+            ),
+            apply,
+        )
 
     def action_clear_filters(self) -> None:
         self.clear_filters_worker()

@@ -25,6 +25,7 @@ class PullListState:
     query: Optional[str] = None
     assignee_filter: AssigneeFilter = AssigneeFilter.ALL
     filter_text: str = ""
+    author_filter: frozenset[str] = field(default_factory=frozenset)
     index: int = 0
     error: Optional[str] = None
     sort_column: Optional[str] = "updated"
@@ -55,6 +56,27 @@ def filter_pulls(pulls: Sequence[PullSummary], value: str) -> list[PullSummary]:
             )
         ).casefold()
     ]
+
+
+def filter_pulls_by_authors(
+    pulls: Sequence[PullSummary], authors: frozenset[str]
+) -> list[PullSummary]:
+    if not authors:
+        return list(pulls)
+    return [pull for pull in pulls if pull.author in authors]
+
+
+def authors_from_pulls(pulls: Sequence[PullSummary]) -> list[str]:
+    seen: set[str] = set()
+    authors: list[str] = []
+    for pull in pulls:
+        name = pull.author.strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        authors.append(name)
+    authors.sort(key=str.casefold)
+    return authors
 
 
 def format_pull_timestamp(value: Optional[str]) -> str:
@@ -128,8 +150,10 @@ def visible_pulls(
     *,
     viewed_times: Optional[Mapping[str, Optional[str]]] = None,
 ) -> list[PullSummary]:
+    filtered = filter_pulls(state.pulls, state.filter_text)
+    filtered = filter_pulls_by_authors(filtered, state.author_filter)
     return sort_pulls(
-        filter_pulls(state.pulls, state.filter_text),
+        filtered,
         state.sort_column,
         state.sort_reverse,
         viewed_times=viewed_times,
@@ -150,6 +174,11 @@ def selected_pull(
 
 def set_pull_filter(state: PullListState, value: str) -> None:
     state.filter_text = value
+    state.index = 0
+
+
+def set_author_filter(state: PullListState, authors: frozenset[str]) -> None:
+    state.author_filter = authors
     state.index = 0
 
 
