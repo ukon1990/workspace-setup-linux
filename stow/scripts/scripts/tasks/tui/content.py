@@ -52,15 +52,23 @@ def _segment_widget(
     path = images.get(segment.url)
     caption = segment.alt or "image"
     if path is not None and TerminalImage is not None:
-        return TerminalImage(
-            str(path),
-            classes="detail-image",
-            id=f"content-img-{index}",
-            on_error=lambda _exc, cap=caption, url=segment.url: Markdown(
-                f"[🖼 {cap}]({url})",
-                classes="content-md",
-            ),
-        )
+        try:
+            return TerminalImage(
+                str(path),
+                classes="detail-image",
+                id=f"content-img-{index}",
+                on_error=lambda _exc, cap=caption, url=segment.url: Markdown(
+                    f"[🖼 {cap}]({url})",
+                    classes="content-md",
+                ),
+            )
+        except TypeError:
+            # Older textual-image builds omit on_error.
+            return TerminalImage(
+                str(path),
+                classes="detail-image",
+                id=f"content-img-{index}",
+            )
     return Markdown(
         f"[🖼 {caption}]({segment.url})",
         classes="content-md",

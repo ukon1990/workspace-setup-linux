@@ -47,11 +47,11 @@ if [[ "${DRY_RUN:-0}" == 1 ]]; then
 fi
 
 command -v "$python_bin" >/dev/null 2>&1 || {
-  echo "Python 3.9+ is required to set up tasks." >&2
+  echo "Python 3.12+ is required to set up tasks." >&2
   exit 1
 }
-"$python_bin" -c 'import sys; raise SystemExit(sys.version_info < (3, 9))' || {
-  echo "Python 3.9+ is required to set up tasks." >&2
+"$python_bin" -c 'import sys; raise SystemExit(sys.version_info < (3, 12))' || {
+  echo "Python 3.12+ is required to set up tasks (textual-image needs it)." >&2
   exit 1
 }
 
