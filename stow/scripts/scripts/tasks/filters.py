@@ -1,12 +1,14 @@
 """Persisted structured filters for the tasks browser."""
 
+import fcntl
 import os
 import re
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Iterator, Mapping, Optional, Union
 
 import yaml
 
@@ -67,26 +69,27 @@ def save_assignee_filter(
     _validate_scope(scope)
     selected = _selection(selection)
     state_path = _state_path(path)
-    scopes = _read_scopes(state_path) if state_path.exists() else {}
-    scopes[scope] = selected
-    _write_scopes(state_path, scopes)
+    with _state_lock(state_path):
+        scopes = _read_scopes(state_path) if state_path.exists() else {}
+        scopes[scope] = selected
+        _write_scopes(state_path, scopes)
 
 
 def clear_assignee_filter(scope: str, path: Optional[Union[str, Path]] = None) -> None:
     """Remove one scope while preserving all other scopes."""
     _validate_scope(scope)
     state_path = _state_path(path)
-    if not state_path.exists():
-        return
-
-    scopes = _read_scopes(state_path)
-    if scope not in scopes:
-        return
-    del scopes[scope]
-    if scopes:
-        _write_scopes(state_path, scopes)
-    else:
-        state_path.unlink()
+    with _state_lock(state_path):
+        if not state_path.exists():
+            return
+        scopes = _read_scopes(state_path)
+        if scope not in scopes:
+            return
+        del scopes[scope]
+        if scopes:
+            _write_scopes(state_path, scopes)
+        else:
+            state_path.unlink()
 
 
 def _state_path(path: Optional[Union[str, Path]]) -> Path:
@@ -134,6 +137,22 @@ def _mapping(value: Any, name: str) -> Mapping[str, Any]:
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         raise FilterStateError(f"{name} must be a mapping with string keys")
     return value
+
+
+@contextmanager
+def _state_lock(path: Path) -> Iterator[None]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_name(f"{path.name}.lock")
+    try:
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            os.chmod(lock_path, 0o600)
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    except OSError as error:
+        raise FilterStateError(f"Could not lock filter state {path}: {error}") from error
 
 
 def _write_scopes(path: Path, scopes: Mapping[str, AssigneeFilter]) -> None:

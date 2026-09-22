@@ -105,9 +105,7 @@ class JiraQueryTests(unittest.TestCase):
             AssigneeFilter.ALL: None,
             AssigneeFilter.ME: "assignee = currentUser()",
             AssigneeFilter.UNASSIGNED: "assignee is EMPTY",
-            AssigneeFilter.ME_OR_UNASSIGNED: (
-                "(assignee = currentUser() OR assignee is EMPTY)"
-            ),
+            AssigneeFilter.ME_OR_UNASSIGNED: ("(assignee = currentUser() OR assignee is EMPTY)"),
             AssigneeFilter.ASSIGNED_ANYONE: "assignee is not EMPTY",
         }
 

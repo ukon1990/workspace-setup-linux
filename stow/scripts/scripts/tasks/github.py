@@ -115,20 +115,6 @@ class GithubBackend:
         query = _join_search(self.search, search)
         if updated_since:
             query = _join_search(query, f"updated:>={updated_since}")
-        if assignee_filter is AssigneeFilter.ME_OR_UNASSIGNED:
-            assigned = self._list_issues(
-                repository, query, AssigneeFilter.ME, include_closed=include_closed
-            )
-            unassigned = self._list_issues(
-                repository,
-                query,
-                AssigneeFilter.UNASSIGNED,
-                include_closed=include_closed,
-            )
-            merged = {}
-            for issue in assigned + unassigned:
-                merged.setdefault(issue.identity.stable_id, issue)
-            return tuple(merged.values())[: self.limit]
         return self._list_issues(
             repository, query, assignee_filter, include_closed=include_closed
         )
@@ -144,7 +130,9 @@ class GithubBackend:
         if assignee_filter is AssigneeFilter.UNASSIGNED:
             query = _join_search(query, "no:assignee")
         elif assignee_filter is AssigneeFilter.ASSIGNED_ANYONE:
-            query = _join_search(query, "has:assignee")
+            query = _join_search(query, "assignee:*")
+        elif assignee_filter is AssigneeFilter.ME_OR_UNASSIGNED:
+            query = _join_search(query, "(assignee:@me OR no:assignee)")
 
         command = [
             "gh",

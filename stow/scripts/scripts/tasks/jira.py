@@ -220,9 +220,7 @@ class JiraBackend:
             AssigneeFilter.ALL: None,
             AssigneeFilter.ME: "assignee = currentUser()",
             AssigneeFilter.UNASSIGNED: "assignee is EMPTY",
-            AssigneeFilter.ME_OR_UNASSIGNED: (
-                "(assignee = currentUser() OR assignee is EMPTY)"
-            ),
+            AssigneeFilter.ME_OR_UNASSIGNED: ("(assignee = currentUser() OR assignee is EMPTY)"),
             AssigneeFilter.ASSIGNED_ANYONE: "assignee is not EMPTY",
         }[assignee_filter]
         if assignee_clause:

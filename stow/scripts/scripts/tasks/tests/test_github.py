@@ -153,9 +153,7 @@ class GithubListTests(unittest.TestCase):
 
     @patch("tasks.github.run_json", return_value=[])
     def test_assigned_to_me_uses_gh_assignee_flag(self, run_json):
-        GithubBackend("acme/app", search="label:ready").list_issues(
-            "is:issue", AssigneeFilter.ME
-        )
+        GithubBackend("acme/app", search="label:ready").list_issues("is:issue", AssigneeFilter.ME)
 
         command = run_json.call_args.args[0]
         self.assertEqual(command[command.index("--assignee") + 1], "@me")
@@ -180,34 +178,21 @@ class GithubListTests(unittest.TestCase):
 
         command = run_json.call_args.args[0]
         self.assertNotIn("--assignee", command)
-        self.assertEqual(command[command.index("--search") + 1], "parser bug has:assignee")
+        self.assertEqual(command[command.index("--search") + 1], "parser bug assignee:*")
 
-    @patch("tasks.github.run_json")
-    def test_me_or_unassigned_merges_deduplicates_and_caps_results(self, run_json):
-        run_json.side_effect = [
-            [self.issue(3), self.issue(1), self.issue(2)],
-            [self.issue(2, "Duplicate"), self.issue(4), self.issue(5)],
-        ]
-
-        issues = GithubBackend("acme/app", limit=4, search="label:ready").list_issues(
+    @patch("tasks.github.run_json", return_value=[])
+    def test_me_or_unassigned_uses_one_ordered_boolean_query(self, run_json):
+        GithubBackend("acme/app", limit=4, search="label:ready").list_issues(
             "sort:updated", AssigneeFilter.ME_OR_UNASSIGNED
         )
 
-        self.assertEqual([issue.identity.key for issue in issues], ["3", "1", "2", "4"])
-        self.assertEqual(len(run_json.call_args_list), 2)
-        me_command = run_json.call_args_list[0].args[0]
-        unassigned_command = run_json.call_args_list[1].args[0]
-        self.assertEqual(me_command[me_command.index("--limit") + 1], "4")
-        self.assertEqual(me_command[me_command.index("--assignee") + 1], "@me")
+        self.assertEqual(len(run_json.call_args_list), 1)
+        command = run_json.call_args.args[0]
+        self.assertEqual(command[command.index("--limit") + 1], "4")
+        self.assertNotIn("--assignee", command)
         self.assertEqual(
-            me_command[me_command.index("--search") + 1],
-            "label:ready sort:updated",
-        )
-        self.assertEqual(unassigned_command[unassigned_command.index("--limit") + 1], "4")
-        self.assertNotIn("--assignee", unassigned_command)
-        self.assertEqual(
-            unassigned_command[unassigned_command.index("--search") + 1],
-            "label:ready sort:updated no:assignee",
+            command[command.index("--search") + 1],
+            "label:ready sort:updated (assignee:@me OR no:assignee)",
         )
 
     def test_rejects_unbounded_limit(self):

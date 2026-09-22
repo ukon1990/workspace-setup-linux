@@ -1,3 +1,4 @@
+import multiprocessing
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,18 @@ from tasks.filters import (
     load_assignee_filter,
     save_assignee_filter,
 )
+
+
+def _save_repeatedly(path, scope, selection, start):
+    start.wait()
+    for _ in range(30):
+        save_assignee_filter(scope, selection, path)
+
+
+def _clear_repeatedly(path, scope, start):
+    start.wait()
+    for _ in range(30):
+        clear_assignee_filter(scope, path)
 
 
 class FilterStateTests(unittest.TestCase):
@@ -78,6 +91,75 @@ class FilterStateTests(unittest.TestCase):
         labels = [option.label for option in AssigneeFilter]
         self.assertEqual(len(labels), len(set(labels)))
         self.assertTrue(all(label and len(label) <= 20 for label in labels))
+
+    def test_concurrent_saves_preserve_both_scopes(self):
+        with self.temporary_directory() as directory:
+            path = Path(directory) / "filters.yaml"
+            context = multiprocessing.get_context("spawn")
+            start = context.Event()
+            processes = [
+                context.Process(
+                    target=_save_repeatedly,
+                    args=(path, "jira:PROJECT", AssigneeFilter.ME, start),
+                ),
+                context.Process(
+                    target=_save_repeatedly,
+                    args=(path, "github:owner/repo", AssigneeFilter.UNASSIGNED, start),
+                ),
+            ]
+            for process in processes:
+                process.start()
+            start.set()
+            for process in processes:
+                process.join(10)
+                self.assertEqual(process.exitcode, 0)
+
+            self.assertEqual(
+                load_assignee_filter("jira:PROJECT", path).selection,
+                AssigneeFilter.ME,
+            )
+            self.assertEqual(
+                load_assignee_filter("github:owner/repo", path).selection,
+                AssigneeFilter.UNASSIGNED,
+            )
+
+    def test_concurrent_clear_does_not_erase_other_scope_save(self):
+        with self.temporary_directory() as directory:
+            path = Path(directory) / "filters.yaml"
+            save_assignee_filter("jira:PROJECT", AssigneeFilter.ME, path)
+            save_assignee_filter("github:owner/repo", AssigneeFilter.ME, path)
+            context = multiprocessing.get_context("spawn")
+            start = context.Event()
+            processes = [
+                context.Process(
+                    target=_clear_repeatedly,
+                    args=(path, "jira:PROJECT", start),
+                ),
+                context.Process(
+                    target=_save_repeatedly,
+                    args=(
+                        path,
+                        "github:owner/repo",
+                        AssigneeFilter.ASSIGNED_ANYONE,
+                        start,
+                    ),
+                ),
+            ]
+            for process in processes:
+                process.start()
+            start.set()
+            for process in processes:
+                process.join(10)
+                self.assertEqual(process.exitcode, 0)
+
+            self.assertEqual(
+                load_assignee_filter("jira:PROJECT", path).selection,
+                AssigneeFilter.ALL,
+            )
+            self.assertEqual(
+                load_assignee_filter("github:owner/repo", path).selection,
+                AssigneeFilter.ASSIGNED_ANYONE,
+            )
 
 
 if __name__ == "__main__":
