@@ -379,8 +379,9 @@ class JiraNormalizationTests(unittest.TestCase):
         self.assertIn("comment", argv[argv.index("--fields") + 1])
         self.assertEqual(detail.identity.stable_id, "jira:PROJ-2")
         self.assertIn("See PROJ-3 and PROJ-8.", detail.description)
-        self.assertIn("Docs (https://example.test)", detail.description)
+        self.assertIn("[Docs](https://example.test)", detail.description)
         self.assertIn("- Read only", detail.description)
+        self.assertIn("attachment", argv[argv.index("--fields") + 1])
         self.assertEqual(detail.comments[0].author, "Grace")
         self.assertIn("@Linus check PROJ-9", detail.comments[0].body)
 
@@ -410,6 +411,109 @@ class JiraNormalizationTests(unittest.TestCase):
             relations["PROJ-9"][:2],
             (RelationshipKind.MENTIONED, "mentioned"),
         )
+
+    @patch("tasks.jira.run_json")
+    def test_adf_keeps_media_headings_marks_and_attachment_urls(self, run):
+        run.return_value = {
+            "key": "PROJ-10",
+            "self": "https://jira.example/rest/api/3/issue/10010",
+            "fields": {
+                "summary": "Screenshot bug",
+                "status": {"name": "Open"},
+                "issuetype": {"name": "Bug"},
+                "attachment": [
+                    {
+                        "filename": "shot.png",
+                        "content": "https://jira.example/rest/api/3/attachment/content/42",
+                    }
+                ],
+                "description": {
+                    "type": "doc",
+                    "content": [
+                        {
+                            "type": "heading",
+                            "attrs": {"level": 2},
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "Steps",
+                                    "marks": [{"type": "strong"}],
+                                }
+                            ],
+                        },
+                        {
+                            "type": "paragraph",
+                            "content": [
+                                {"type": "text", "text": "Before image"},
+                                {
+                                    "type": "text",
+                                    "text": "hint",
+                                    "marks": [{"type": "em"}],
+                                },
+                            ],
+                        },
+                        {
+                            "type": "mediaSingle",
+                            "attrs": {"layout": "center"},
+                            "content": [
+                                {
+                                    "type": "media",
+                                    "attrs": {
+                                        "type": "file",
+                                        "id": "media-uuid-1",
+                                        "alt": "shot.png",
+                                        "collection": "",
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "type": "paragraph",
+                            "content": [{"type": "text", "text": "After image"}],
+                        },
+                        {
+                            "type": "mediaSingle",
+                            "attrs": {"layout": "center"},
+                            "content": [
+                                {
+                                    "type": "media",
+                                    "attrs": {
+                                        "type": "file",
+                                        "id": "orphan-media",
+                                        "alt": "missing.png",
+                                    },
+                                }
+                            ],
+                        },
+                        {"type": "rule"},
+                        {
+                            "type": "codeBlock",
+                            "attrs": {"language": "python"},
+                            "content": [{"type": "text", "text": "print(1)"}],
+                        },
+                    ],
+                },
+            },
+        }
+
+        detail = JiraBackend().get_task("PROJ-10")
+
+        self.assertIn("## **Steps**", detail.description)
+        self.assertIn("Before image *hint*", detail.description)
+        self.assertIn(
+            "![shot.png](https://jira.example/rest/api/3/attachment/content/42)",
+            detail.description,
+        )
+        self.assertIn("After image", detail.description)
+        self.assertIn("[🖼 missing.png](media:orphan-media)", detail.description)
+        self.assertIn("---", detail.description)
+        self.assertIn("```python\nprint(1)\n```", detail.description)
+        # Media must not silently drop surrounding paragraphs.
+        before_at = detail.description.index("Before image")
+        image_at = detail.description.index("![shot.png]")
+        after_at = detail.description.index("After image")
+        self.assertLess(before_at, image_at)
+        self.assertLess(image_at, after_at)
 
     @patch("tasks.jira.run_json")
     def test_mentions_deduplicate_self_and_first_class_relations(self, run):
