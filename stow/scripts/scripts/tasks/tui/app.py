@@ -80,7 +80,12 @@ def run(
         cache_scope=cache_scope,
         cache_dir=cache_dir,
     )
-    pulls_controller = PullsController(pulls_backend, exclude_patterns=pull_excludes)
+    pulls_controller = PullsController(
+        pulls_backend,
+        exclude_patterns=pull_excludes,
+        cache_scope=cache_scope,
+        cache_dir=cache_dir,
+    )
     TasksApp(
         controller,
         pulls_controller,

@@ -53,11 +53,13 @@ from .pulls import (
     PULL_SORT_COLUMNS,
     PullsController,
     ci_label,
+    format_pull_timestamp,
     pull_detail_markdown,
     selected_pull,
     set_pull_filter,
     visible_pulls,
 )
+from ..pr_views import activity_label
 from ..pulls import (
     DiffFile,
     comments_for_path,
@@ -98,6 +100,7 @@ HELP_MARKDOWN = """\
 | `Tab` | Cycle focus within current PR tab |
 | `x` | Toggle hiding generated/excluded files |
 | `l` | Mark current file as looked at |
+| `Seen` column | `·` never opened · `*` updated since last open · `-` caught up |
 | `m` | Open all review comments for current file |
 | `c` | Compose inline comment (Files / Diff) |
 | `v` | Toggle visual line selection (Diff) |
@@ -355,6 +358,15 @@ class ListScreen(Screen):
         self._pulls_loaded = False
         self._issue_columns_ready = False
 
+    def _pull_views(self) -> dict[str, Optional[str]]:
+        return self.pulls_controller.viewed_times_for(self.pulls_state.pulls)
+
+    def _visible_pulls(self):
+        return visible_pulls(self.pulls_state, viewed_times=self._pull_views())
+
+    def _selected_pull(self):
+        return selected_pull(self.pulls_state, viewed_times=self._pull_views())
+
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         yield Static("Issues | Pull requests", id="tab-bar")
@@ -382,6 +394,11 @@ class ListScreen(Screen):
         else:
             self._populate_view()
 
+    def on_screen_resume(self) -> None:
+        if self._active_tab == "pulls" and self._pulls_loaded:
+            self._populate_pulls_table()
+            self._update_chrome()
+
     def _ensure_issue_columns(self) -> None:
         table = self.query_one("#task-table", DataTable)
         table.clear(columns=True)
@@ -405,6 +422,9 @@ class ListScreen(Screen):
             ("CI", "ci"),
             ("State", "status"),
             ("Author", "author"),
+            ("Updated", "updated"),
+            ("Created", "created"),
+            ("Seen", "activity"),
             ("Title", "title"),
         )
         self._issue_columns_ready = False
@@ -427,7 +447,7 @@ class ListScreen(Screen):
                 if self.pulls_state.filter_text
                 else ""
             )
-            visible = len(visible_pulls(self.pulls_state))
+            visible = len(self._visible_pulls())
             error = self.pulls_state.error or self.pulls_state.repo_error
             if error:
                 status.update(f"Error: {error}")
@@ -481,10 +501,11 @@ class ListScreen(Screen):
         tree.display = False
         table.clear()
         if keep_identity is None:
-            current = selected_pull(self.pulls_state)
+            current = self._selected_pull()
             if current is not None:
                 keep_identity = current.stable_id
-        pulls = visible_pulls(self.pulls_state)
+        views = self._pull_views()
+        pulls = visible_pulls(self.pulls_state, viewed_times=views)
         error = self.pulls_state.error or self.pulls_state.repo_error
         if error:
             table.display = False
@@ -508,6 +529,9 @@ class ListScreen(Screen):
                 ci_label(pull.ci_state),
                 pull.status,
                 pull.author or "-",
+                format_pull_timestamp(pull.updated_at),
+                format_pull_timestamp(pull.created_at),
+                activity_label(pull.updated_at, views.get(pull.stable_id)),
                 pull.title,
                 key=pull.stable_id,
             )
@@ -582,13 +606,13 @@ class ListScreen(Screen):
             column = event.column_key.value
             if not isinstance(column, str) or column not in PULL_SORT_COLUMNS:
                 return
-            current = selected_pull(self.pulls_state)
+            current = self._selected_pull()
             keep_identity = current.stable_id if current else None
             if self.pulls_state.sort_column == column:
                 self.pulls_state.sort_reverse = not self.pulls_state.sort_reverse
             else:
                 self.pulls_state.sort_column = column
-                self.pulls_state.sort_reverse = False
+                self.pulls_state.sort_reverse = column in {"updated", "created"}
             self._populate_pulls_table(keep_identity=keep_identity)
             self._update_chrome()
             return
@@ -825,7 +849,7 @@ class ListScreen(Screen):
 
     def action_open_task(self) -> None:
         if self._active_tab == "pulls":
-            pull = selected_pull(self.pulls_state)
+            pull = self._selected_pull()
             if pull is None:
                 return
             self.app.push_screen(PullDetailScreen(self.pulls_controller, pull))
@@ -918,7 +942,7 @@ class ListScreen(Screen):
 
     def action_open_url(self) -> None:
         if self._active_tab == "pulls":
-            pull = selected_pull(self.pulls_state)
+            pull = self._selected_pull()
             url = pull.url if pull else None
             if not url:
                 self.notify("No URL for this pull request", severity="warning")
@@ -1206,6 +1230,7 @@ class PullDetailScreen(Screen):
         self.pull = pull
         self.detail = None
         self.error: Optional[str] = None
+        self._viewed_at_baseline: Optional[str] = controller.viewed_at(pull.stable_id)
         self._active_tab = "description"
         self._focus_pane = 0  # files tab: 0 files, 1 diff
         self._diff_text: Optional[str] = None
@@ -1363,8 +1388,13 @@ class PullDetailScreen(Screen):
         self.pull = summary
         self.title = f"{summary.display_key} · {summary.title}"
         self.query_one("#content-body", Markdown).update(
-            pull_detail_markdown(detail, checks_text=self._format_checks(detail.checks))
+            pull_detail_markdown(
+                detail,
+                checks_text=self._format_checks(detail.checks),
+                viewed_at=self._viewed_at_baseline,
+            )
         )
+        self.controller.mark_viewed(summary.stable_id)
         if self._diff_loaded:
             self._apply_file_diffs()
         elif self._active_tab == "files" and not self._diff_loading:
@@ -1596,7 +1626,7 @@ class PullDetailScreen(Screen):
         self.app.push_screen(
             ReviewCommentsModal(
                 f"Review comments · {item.label}",
-                format_review_comments(comments),
+                format_review_comments(comments, viewed_at=self._viewed_at_baseline),
             )
         )
 

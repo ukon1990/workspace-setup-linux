@@ -255,5 +255,81 @@ class GithubParentListTests(unittest.TestCase):
         self.assertIn("updated:>=2026-09-21", command[command.index("--search") + 1])
 
 
+class PullCacheTests(unittest.TestCase):
+    def test_pull_save_load_and_controller_delta(self):
+        from tasks.cache import PullCacheEntry, load_pull_entry, save_pull_entry
+        from tasks.models import CiState, PullSummary
+        from tasks.tui.pulls import PullsController
+
+        def make_pull(number, title="PR", status="Open", **kwargs):
+            return PullSummary(
+                repository="acme/app",
+                number=number,
+                title=title,
+                status=status,
+                ci_state=CiState.PASS,
+                updated_at=kwargs.get("updated_at"),
+            )
+
+        with TemporaryDirectory() as directory:
+            scope = "github:acme/app"
+            cache_dir = Path(directory)
+            entry = PullCacheEntry(
+                synced_at="2026-09-21T10:00:00+00:00",
+                query=None,
+                assignee=AssigneeFilter.ALL,
+            )
+            entry.replace_items([make_pull(1, "Alpha"), make_pull(2, "Beta")])
+            save_pull_entry(scope, entry, cache_dir=cache_dir)
+
+            loaded = load_pull_entry(scope, None, AssigneeFilter.ALL, cache_dir=cache_dir)
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded.items["github-pr:acme/app:1"].title, "Alpha")
+
+            # Issue slots and pull slots coexist.
+            task_entry = CacheEntry(
+                synced_at="2026-09-21T10:00:00+00:00",
+                query=None,
+                assignee=AssigneeFilter.ALL,
+            )
+            task_entry.replace_items([_summary(9, "Issue")])
+            save_entry(scope, task_entry, cache_dir=cache_dir)
+            again = load_pull_entry(scope, None, AssigneeFilter.ALL, cache_dir=cache_dir)
+            self.assertEqual(again.items["github-pr:acme/app:1"].title, "Alpha")
+            self.assertIsNotNone(
+                load_entry(scope, None, AssigneeFilter.ALL, cache_dir=cache_dir)
+            )
+
+            class RecordingBackend:
+                def __init__(self):
+                    self.calls = []
+
+                def list_pulls(self, search=None, assignee_filter=AssigneeFilter.ALL, **kwargs):
+                    self.calls.append((search, assignee_filter, kwargs))
+                    if kwargs.get("updated_since"):
+                        return (
+                            make_pull(1, "Alpha edited", status="Closed"),
+                            make_pull(3, "Fresh"),
+                        )
+                    return (make_pull(1, "Seed"), make_pull(2, "Other"))
+
+            backend = RecordingBackend()
+            controller = PullsController(
+                backend,
+                cache_scope=scope,
+                cache_dir=cache_dir,
+            )
+            state = controller.make_list_state()
+            controller.load_list(state, refresh=False)
+            self.assertEqual(len(state.pulls), 2)
+
+            controller.load_list(state, refresh=True, full=False)
+            self.assertIn("updated_since", backend.calls[-1][2])
+            self.assertTrue(backend.calls[-1][2].get("include_closed"))
+            # Closed seed hidden from default presentation; open #2 and #3 remain.
+            numbers = sorted(p.number for p in state.pulls)
+            self.assertEqual(numbers, [2, 3])
+
+
 if __name__ == "__main__":
     unittest.main()

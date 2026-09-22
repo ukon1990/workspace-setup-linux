@@ -173,6 +173,8 @@ class PullSummary:
     is_draft: bool = False
     ci_state: CiState = CiState.UNKNOWN
     review_decision: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
     @property
     def display_key(self) -> str:

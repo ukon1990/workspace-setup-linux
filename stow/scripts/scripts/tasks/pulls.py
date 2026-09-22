@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import Any, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
@@ -15,12 +15,12 @@ from .models import CiCheck, CiState, Comment, PullDetail, PullSummary, ReviewCo
 from .process import ProcessError, ProcessErrorKind, run_json, run_text
 
 _LIST_FIELDS = (
-    "number,title,state,isDraft,author,assignees,labels,url,updatedAt,"
+    "number,title,state,isDraft,author,assignees,labels,url,createdAt,updatedAt,"
     "reviewDecision,statusCheckRollup"
 )
 _DETAIL_FIELDS = (
-    "number,title,state,isDraft,author,assignees,labels,url,body,comments,"
-    "reviewDecision,statusCheckRollup,baseRefName,headRefName"
+    "number,title,state,isDraft,author,assignees,labels,url,createdAt,updatedAt,"
+    "body,comments,reviewDecision,statusCheckRollup,baseRefName,headRefName"
 )
 
 _CI_RANK = {
@@ -561,7 +561,11 @@ def _comment_location(comment: ReviewComment) -> str:
     return f"{where}:{low}–{high}"
 
 
-def format_review_comments(comments: Sequence[ReviewComment]) -> str:
+def format_review_comments(
+    comments: Sequence[ReviewComment],
+    *,
+    viewed_at: Optional[str] = None,
+) -> str:
     if not comments:
         return "No review comments on this file."
     blocks: list[str] = []
@@ -577,6 +581,8 @@ def format_review_comments(comments: Sequence[ReviewComment]) -> str:
                 heading += f" · `{comment.path}` · {loc}"
             if comment.created_at:
                 heading += f" · {comment.created_at}"
+            if is_newer_than(comment.created_at, viewed_at):
+                heading += " (new)"
             indent = "  " * min(depth, 3)
             body = comment.body or "(empty)"
             body_lines = "\n".join(f"{indent}{part}" for part in body.splitlines()) or indent
@@ -585,6 +591,12 @@ def format_review_comments(comments: Sequence[ReviewComment]) -> str:
     while blocks and blocks[-1] in {"", "---"}:
         blocks.pop()
     return "\n".join(blocks).rstrip()
+
+
+def is_newer_than(stamp: Optional[str], baseline: Optional[str]) -> bool:
+    if not stamp or not baseline:
+        return False
+    return stamp > baseline
 
 
 def _diff_file_paths(header: str, chunk: Sequence[str]) -> Tuple[str, str]:
@@ -640,6 +652,7 @@ class GithubPullsBackend:
         assignee_filter: AssigneeFilter = AssigneeFilter.ALL,
         *,
         include_closed: bool = False,
+        updated_since: Optional[str] = None,
     ) -> Tuple[PullSummary, ...]:
         command = [
             "gh",
@@ -657,6 +670,8 @@ class GithubPullsBackend:
         query_parts: list[str] = []
         if search and search.strip():
             query_parts.append(search.strip())
+        if updated_since:
+            query_parts.append(f"updated:>={updated_since}")
         if assignee_filter is AssigneeFilter.ME:
             command.extend(["--assignee", "@me"])
         elif assignee_filter is AssigneeFilter.UNASSIGNED:
@@ -665,10 +680,16 @@ class GithubPullsBackend:
             query_parts.append("has:assignee")
         elif assignee_filter is AssigneeFilter.ME_OR_UNASSIGNED:
             assigned = self.list_pulls(
-                search, AssigneeFilter.ME, include_closed=include_closed
+                search,
+                AssigneeFilter.ME,
+                include_closed=include_closed,
+                updated_since=updated_since,
             )
             unassigned = self.list_pulls(
-                search, AssigneeFilter.UNASSIGNED, include_closed=include_closed
+                search,
+                AssigneeFilter.UNASSIGNED,
+                include_closed=include_closed,
+                updated_since=updated_since,
             )
             merged: dict[str, PullSummary] = {}
             for item in assigned + unassigned:
@@ -709,19 +730,7 @@ class GithubPullsBackend:
         summary = _normalize_summary(payload, self.repository)
         checks = self.list_checks(summary.number)
         if checks:
-            summary = PullSummary(
-                repository=summary.repository,
-                number=summary.number,
-                title=summary.title,
-                status=summary.status,
-                author=summary.author,
-                assignees=summary.assignees,
-                labels=summary.labels,
-                url=summary.url,
-                is_draft=summary.is_draft,
-                ci_state=_rollup_from_checks(checks),
-                review_decision=summary.review_decision,
-            )
+            summary = replace(summary, ci_state=_rollup_from_checks(checks))
         return PullDetail(
             summary=summary,
             description=_string(payload.get("body"), ""),
@@ -915,6 +924,8 @@ def _normalize_summary(payload: Any, repository: str) -> PullSummary:
         is_draft=bool(item.get("isDraft")),
         ci_state=_rollup_ci(rollup),
         review_decision=_optional_string(item.get("reviewDecision")),
+        created_at=_optional_string(item.get("createdAt")),
+        updated_at=_optional_string(item.get("updatedAt")),
     )
 
 

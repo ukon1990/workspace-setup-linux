@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from tasks.models import CiState, Comment, PullDetail, PullSummary, ReviewComment
+from tasks.pr_views import activity_label, load_pr_viewed_at, mark_pr_viewed
 from tasks.pulls import (
     GithubPullsBackend,
     _normalize_summary,
@@ -14,6 +15,7 @@ from tasks.pulls import (
     format_review_comments,
     format_unified_diff,
     group_review_threads,
+    is_newer_than,
     resolve_github_repository,
     review_comment_markers,
     review_comments_by_anchor,
@@ -29,6 +31,8 @@ from tasks.tui.pulls import (
     PullListState,
     PullsController,
     filter_pulls,
+    format_pull_timestamp,
+    pull_detail_markdown,
     set_pull_filter,
     sort_pulls,
     visible_pulls,
@@ -42,6 +46,8 @@ def _pr(
     ci: CiState = CiState.UNKNOWN,
     author: str = "alice",
     status: str = "Open",
+    created_at: str | None = None,
+    updated_at: str | None = None,
 ) -> PullSummary:
     return PullSummary(
         repository="acme/app",
@@ -51,6 +57,8 @@ def _pr(
         author=author,
         ci_state=ci,
         url=f"https://github.com/acme/app/pull/{number}",
+        created_at=created_at,
+        updated_at=updated_at,
     )
 
 
@@ -103,6 +111,18 @@ class NormalizePullTests(unittest.TestCase):
         self.assertEqual(summary.assignees, ("carol",))
         self.assertEqual(summary.ci_state, CiState.FAIL)
 
+    def test_normalize_summary_maps_timestamps(self):
+        payload = {
+            "number": 3,
+            "title": "Dated",
+            "state": "OPEN",
+            "createdAt": "2026-01-02T03:04:05Z",
+            "updatedAt": "2026-09-20T14:32:00Z",
+        }
+        summary = _normalize_summary(payload, "acme/app")
+        self.assertEqual(summary.created_at, "2026-01-02T03:04:05Z")
+        self.assertEqual(summary.updated_at, "2026-09-20T14:32:00Z")
+
     def test_rollup_prefers_fail_over_pending_and_pass(self):
         self.assertEqual(
             _rollup_ci(
@@ -124,7 +144,16 @@ class NormalizePullTests(unittest.TestCase):
             command = run_json.call_args.args[0]
             self.assertEqual(command[:5], ["gh", "pr", "list", "--repo", "acme/app"])
             self.assertIn("--json", command)
-            self.assertIn("statusCheckRollup", command[command.index("--json") + 1])
+            fields = command[command.index("--json") + 1]
+            self.assertIn("statusCheckRollup", fields)
+            self.assertIn("createdAt", fields)
+            self.assertIn("updatedAt", fields)
+
+        with patch("tasks.pulls.run_json", return_value=[]) as run_json:
+            backend.list_pulls(updated_since="2026-09-20")
+            command = run_json.call_args.args[0]
+            self.assertIn("--search", command)
+            self.assertIn("updated:>=2026-09-20", command[command.index("--search") + 1])
 
         with patch("tasks.pulls.run_text", return_value="diff --git a/x") as run_text:
             text = backend.get_diff(7)
@@ -386,6 +415,98 @@ class PullListHelperTests(unittest.TestCase):
         self.assertEqual(len(visible_pulls(state_a)), 3)
         self.assertEqual([p.number for p in visible_pulls(state_b)], [2])
         self.assertEqual(state_a.index, 0)
+
+    def test_default_sort_is_newest_updated(self):
+        pulls = [
+            _pr(1, updated_at="2026-01-01T00:00:00Z"),
+            _pr(2, updated_at="2026-09-20T00:00:00Z"),
+            _pr(3, updated_at="2026-05-01T00:00:00Z"),
+        ]
+        state = PullListState(pulls=list(pulls))
+        self.assertEqual(state.sort_column, "updated")
+        self.assertTrue(state.sort_reverse)
+        self.assertEqual([p.number for p in visible_pulls(state)], [2, 3, 1])
+
+    def test_sort_by_created_and_format_timestamp(self):
+        pulls = [
+            _pr(1, created_at="2026-03-01T10:00:00Z"),
+            _pr(2, created_at="2026-01-01T10:00:00Z"),
+        ]
+        ordered = sort_pulls(pulls, "created", reverse=True)
+        self.assertEqual([p.number for p in ordered], [1, 2])
+        self.assertEqual(format_pull_timestamp("2026-09-20T14:32:05Z"), "2026-09-20 14:32")
+        self.assertEqual(format_pull_timestamp(None), "-")
+
+    def test_activity_sort_uses_viewed_times(self):
+        pulls = [
+            _pr(1, updated_at="2026-09-21T00:00:00Z"),
+            _pr(2, updated_at="2026-09-21T00:00:00Z"),
+            _pr(3, updated_at="2026-09-21T00:00:00Z"),
+        ]
+        views = {
+            pulls[0].stable_id: "2026-09-20T00:00:00Z",  # *
+            pulls[1].stable_id: "2026-09-22T00:00:00Z",  # -
+            pulls[2].stable_id: None,  # ·
+        }
+        ordered = sort_pulls(pulls, "activity", reverse=False, viewed_times=views)
+        self.assertEqual(
+            [activity_label(p.updated_at, views[p.stable_id]) for p in ordered],
+            ["*", "-", "·"],
+        )
+
+
+class PrViewsTests(unittest.TestCase):
+    def test_mark_and_activity_labels(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "pr-views.yaml"
+            self.assertIsNone(load_pr_viewed_at("github-pr:acme/app:1", path=path))
+            self.assertEqual(activity_label("2026-09-21T00:00:00Z", None), "·")
+            mark_pr_viewed(
+                "github-pr:acme/app:1",
+                viewed_at="2026-09-20T00:00:00Z",
+                path=path,
+            )
+            self.assertEqual(
+                load_pr_viewed_at("github-pr:acme/app:1", path=path),
+                "2026-09-20T00:00:00Z",
+            )
+            self.assertEqual(
+                activity_label("2026-09-21T00:00:00Z", "2026-09-20T00:00:00Z"),
+                "*",
+            )
+            self.assertEqual(
+                activity_label("2026-09-19T00:00:00Z", "2026-09-20T00:00:00Z"),
+                "-",
+            )
+
+    def test_detail_markdown_marks_new_comments(self):
+        detail = PullDetail(
+            summary=_pr(1),
+            comments=(
+                Comment(author="a", body="old", created_at="2026-01-01T00:00:00Z"),
+                Comment(author="b", body="fresh", created_at="2026-09-21T00:00:00Z"),
+            ),
+        )
+        text = pull_detail_markdown(detail, viewed_at="2026-09-20T00:00:00Z")
+        self.assertIn("### a · 2026-01-01T00:00:00Z\n", text)
+        self.assertIn("### b · 2026-09-21T00:00:00Z (new)", text)
+        self.assertTrue(is_newer_than("2026-09-21T00:00:00Z", "2026-09-20T00:00:00Z"))
+        review = format_review_comments(
+            (
+                ReviewComment(
+                    id=1,
+                    path="a.py",
+                    body="hi",
+                    author="zoe",
+                    created_at="2026-09-21T00:00:00Z",
+                ),
+            ),
+            viewed_at="2026-09-20T00:00:00Z",
+        )
+        self.assertIn("(new)", review)
 
 
 class PullsControllerTests(unittest.TestCase):
