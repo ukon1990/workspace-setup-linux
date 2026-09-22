@@ -24,7 +24,7 @@ safe_path='import sys; cwd=sys.argv.pop(1); trusted=sys.argv.pop(1); sys.path[:]
 
 runtime_ready() {
   [[ -x "$python" ]] || return 1
-  "$python" -c "$safe_path import yaml, textual, tasks" "$caller_cwd" "$script_dir" >/dev/null 2>&1
+  "$python" -c "$safe_path import yaml, textual, textual_image, tasks" "$caller_cwd" "$script_dir" >/dev/null 2>&1
 }
 
 if ! runtime_ready; then

@@ -27,7 +27,9 @@ from textual.widgets.option_list import Option
 from textual.widgets.tree import TreeNode
 
 from ..filters import AssigneeFilter
+from ..images import fetch_images, markdown_image_urls
 from ..models import BackendIdentity, PullSummary, TaskDetail
+from .content import populate_content_stack
 from .logic import (
     ASSIGNEE_FILTER_OPTIONS,
     TABLE_SORT_COLUMNS,
@@ -1189,7 +1191,7 @@ class DetailScreen(Screen):
         yield Static(id="status-bar")
         with Horizontal(id="detail-body"):
             with VerticalScroll(id="content-pane"):
-                yield Markdown("", id="content-body")
+                yield Vertical(id="content-stack")
             with Vertical(id="relations-pane"):
                 yield Tree("Relationships", id="relations-tree")
         yield Footer()
@@ -1224,24 +1226,35 @@ class DetailScreen(Screen):
         else:
             self.query_one("#content-pane", VerticalScroll).focus()
 
+    def _set_content(self, markdown: str, images: Optional[dict] = None) -> None:
+        populate_content_stack(self.query_one("#content-stack", Vertical), markdown, images)
+
     @work(exclusive=True, thread=True)
     def reload_detail(self, refresh: bool = False) -> None:
         self.app.call_from_thread(self._set_loading, True)
         detail = None
         error = None
         hierarchy = None
+        markdown = "Task detail could not be loaded."
+        images: dict = {}
         try:
             detail, error = self.controller.load_detail(self.identity, refresh=refresh)
             if detail is not None:
                 hierarchy = build_relationship_hierarchy(self.controller, detail)
+                markdown = detail_content_text(detail)
+                images = fetch_images(markdown_image_urls(markdown))
         finally:
-            self.app.call_from_thread(self._after_reload, detail, error, hierarchy)
+            self.app.call_from_thread(
+                self._after_reload, detail, error, hierarchy, markdown, images
+            )
 
     def _after_reload(
         self,
         detail: Optional[TaskDetail],
         error: Optional[str],
         hierarchy: Optional[HierarchyNode] = None,
+        markdown: str = "",
+        images: Optional[dict] = None,
     ) -> None:
         self._set_loading(False)
         self.detail = detail
@@ -1253,9 +1266,7 @@ class DetailScreen(Screen):
             self.title = f"{key} · Unavailable"
             status.update(f"Error: {error}" if error else "Task detail could not be loaded.")
             status.add_class("error")
-            self.query_one("#content-body", Markdown).update(
-                "Task detail could not be loaded."
-            )
+            self._set_content(markdown or "Task detail could not be loaded.")
             self._populate_relations_tree(None)
             return
         summary = detail.summary
@@ -1269,7 +1280,7 @@ class DetailScreen(Screen):
                 f"{', '.join(summary.assignees) or 'unassigned'}"
             )
             status.remove_class("error")
-        self.query_one("#content-body", Markdown).update(detail_content_text(detail))
+        self._set_content(markdown or detail_content_text(detail), images)
         self._populate_relations_tree(hierarchy)
 
     def _populate_relations_tree(self, hierarchy: Optional[HierarchyNode]) -> None:
@@ -1440,7 +1451,7 @@ class PullDetailScreen(Screen):
         yield Static("", id="pr-tab-bar")
         yield Static(id="status-bar")
         with VerticalScroll(id="content-pane"):
-            yield Markdown("", id="content-body")
+            yield Vertical(id="content-stack")
         with Horizontal(id="diff-side"):
             yield OptionList(id="file-list")
             with VerticalScroll(id="diff-pane"):
@@ -1463,6 +1474,9 @@ class PullDetailScreen(Screen):
         overlay.display = active
         if not active:
             self.query_one("#sync-progress", Static).update("")
+
+    def _set_content(self, markdown: str, images: Optional[dict] = None) -> None:
+        populate_content_stack(self.query_one("#content-stack", Vertical), markdown, images)
 
     def _update_tab_bar(self) -> None:
         desc = "[b]Description[/b]" if self._active_tab == "description" else "Description"
@@ -1554,12 +1568,30 @@ class PullDetailScreen(Screen):
         self.app.call_from_thread(self._set_loading, True)
         detail = None
         error = None
+        markdown = "Pull request could not be loaded."
+        images: dict = {}
         try:
             detail, error = self.controller.load_detail(self.pull, refresh=refresh)
+            if detail is not None:
+                markdown = pull_detail_markdown(
+                    detail,
+                    checks_text=self._format_checks(detail.checks),
+                    viewed_at=self._viewed_at_baseline,
+                )
+                images = fetch_images(markdown_image_urls(markdown))
         finally:
-            self.app.call_from_thread(self._after_reload, detail, error, refresh)
+            self.app.call_from_thread(
+                self._after_reload, detail, error, refresh, markdown, images
+            )
 
-    def _after_reload(self, detail, error: Optional[str], refresh: bool = False) -> None:
+    def _after_reload(
+        self,
+        detail,
+        error: Optional[str],
+        refresh: bool = False,
+        markdown: str = "",
+        images: Optional[dict] = None,
+    ) -> None:
         self._set_loading(False)
         self.detail = detail
         self.error = error
@@ -1572,21 +1604,13 @@ class PullDetailScreen(Screen):
             self._file_index = 0
         if detail is None:
             self.title = f"{self.pull.display_key} · Unavailable"
-            self.query_one("#content-body", Markdown).update(
-                "Pull request could not be loaded."
-            )
+            self._set_content(markdown or "Pull request could not be loaded.")
             self._update_status()
             return
         summary = detail.summary
         self.pull = summary
         self.title = f"{summary.display_key} · {summary.title}"
-        self.query_one("#content-body", Markdown).update(
-            pull_detail_markdown(
-                detail,
-                checks_text=self._format_checks(detail.checks),
-                viewed_at=self._viewed_at_baseline,
-            )
-        )
+        self._set_content(markdown, images)
         self.controller.mark_viewed(summary.stable_id)
         if self._diff_loaded:
             self._apply_file_diffs()

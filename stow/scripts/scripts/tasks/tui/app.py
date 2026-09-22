@@ -5,6 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
+# Query terminal graphics support before Textual starts its IO threads.
+import textual_image.renderable  # noqa: F401
+from textual_image.widget import Image as _TerminalImage  # noqa: F401
+
 from textual.app import App
 from textual.screen import Screen
 

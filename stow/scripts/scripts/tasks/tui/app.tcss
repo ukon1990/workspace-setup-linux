@@ -140,8 +140,20 @@ Footer {
     text-style: none;
 }
 
-#content-body {
+#content-stack {
     height: auto;
+    width: 100%;
+}
+
+.content-md {
+    height: auto;
+    width: 100%;
+}
+
+.detail-image {
+    width: 100%;
+    height: auto;
+    margin: 1 0;
 }
 
 #relations-tree {
