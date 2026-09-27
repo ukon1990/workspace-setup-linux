@@ -174,6 +174,9 @@ main() {
   install_sdkman_java
   install_ruby_with_rbenv
   install_tasks_runtime
+  if [[ "$(uname -s)" == Linux ]]; then
+    DRY_RUN="$DRY_RUN" "$ROOT/stow/scripts/scripts/disks-setup.sh"
+  fi
 
   echo
   echo "Shell tools installed. Restart your shell or source the init scripts."

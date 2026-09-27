@@ -261,6 +261,96 @@ ruff check stow/scripts/scripts/tasks
 bash -n stow/scripts/scripts/tasks.sh stow/scripts/scripts/tasks-setup.sh scripts/install-shell-tools.sh
 ```
 
+## Disk mounting (Linux)
+
+Launch the Textual disk browser as your normal user:
+
+```bash
+~/scripts/disks-setup.sh
+disks
+```
+
+The `disks` command is supplied by the scripts Stow package; `~/scripts/disks.sh`
+also works. Before linking, use `./stow/scripts/scripts/disks.sh` from this repo.
+Linux shell-tool bootstrap installs its dedicated Textual runtime automatically;
+macOS skips it. `DISKS_VENV` overrides `~/.local/share/disks/venv` for both setup
+and launch. Linux package bootstrap includes Python/pip, util-linux, sudo, and
+systemd. NTFS support comes from the kernel's `ntfs3` driver, not `ntfs-3g`.
+
+Use arrows or `j`/`k` to select a partition, `m` to mount, `u` to unmount,
+`b` to enable/disable mounting at boot, `r` to refresh, and `q` to quit.
+In dialogs, Tab/Shift+Tab or arrows move between controls. Left/Right moves the
+cursor when the mount path input is focused. Enter or Space activates buttons
+and switches; on a dropdown, they open its choices and arrows select one.
+Escape cancels. Every operation has a review step.
+Sudo prompts appear in the terminal only when an operation needs elevation.
+Don't start the whole TUI with sudo.
+
+New mount locations default to `/mnt/<partition-name>` and can be changed to
+a directory below `/mnt`, `/media`, or `/run/media`. Existing fstab entries
+retain their mount locations. System filesystems, their backing devices,
+read-only devices, and unsupported filesystems are view-only. Snap loop devices
+and zram are hidden. NTFS, FAT32, exFAT, ext4, XFS, and Btrfs are supported;
+formatting, repair, encrypted-volume unlocking, and network mounts are not.
+
+NTFS mounts use `ntfs3`; NTFS, FAT, and exFAT use `rw,uid=<your UID>,gid=<your GID>,dmask=000,fmask=111`
+so every local user can read/write directories and files created with these
+mounts. ext4/XFS/Btrfs retain their existing Unix permissions. The browser
+shows the actual mount options and whether your account has access to the mount
+root. A read/write mount can still have a root directory without write permission.
+After a manual NTFS mount, `disks` checks the root and, if needed, sets its mode
+to 777 as disclosed in the review. Boot setup can make the same repair when the
+NTFS drive is already mounted; otherwise mount it through `disks` once to check
+the root. Existing files and subdirectories are never changed recursively, so
+their permissions may still restrict access. A dirty/hibernated Windows volume
+is never force-mounted or repaired: fully shut down Windows and resolve its
+filesystem errors there before retrying. For a dirty NTFS volume, run
+`chkdsk X: /f` as an administrator in Windows, replacing `X` with its actual
+drive letter. The kernel usually gives the specific mount refusal in
+`sudo journalctl -k -n 50`.
+
+Already-mounted partitions cannot be mounted again. To change an existing
+NTFS mount's ownership, unmount it and then mount it through the browser.
+For stacked mounts, select the visible top layer (identified by mount ID),
+unmount, refresh, and repeat as necessary. Busy mounts report the error;
+the tool does not force or lazily unmount them.
+
+Boot setup previews an exact fstab diff and uses UUIDs for new entries.
+Enabled entries use `nofail,x-systemd.device-timeout=5s`; missing disks won't
+block boot. The numeric UID/GID are saved for NTFS/FAT/exFAT, so update the
+entry if your account IDs change. Disabling sets `noauto` and removes fstab
+automount/boot-target options. Other separately configured services can still
+mount the disk. Boot edits do not mount or unmount anything immediately.
+
+Every actual fstab change requires a timestamped backup in
+`/etc/fstab.backups/`. The candidate is validated with `findmnt --verify`, then
+installed atomically with the previous ownership/mode. Concurrent fstab edits
+abort the operation. Existing invalid fstab entries must be fixed before
+saving. Backups are kept indefinitely; a failed systemd reload reports the
+saved backup path and the command to retry.
+
+To restore, select the exact backup you want, inspect it, then replace the
+example filename below with that backup's name:
+
+```bash
+sudo ls -lt /etc/fstab.backups/
+sudo diff -u /etc/fstab /etc/fstab.backups/fstab.TIMESTAMP
+sudo findmnt --verify --tab-file /etc/fstab.backups/fstab.TIMESTAMP
+sudo cp -a --backup=numbered /etc/fstab /etc/fstab.backups/fstab.before-manual-restore
+sudo cp -p /etc/fstab.backups/fstab.TIMESTAMP /etc/fstab
+sudo systemctl daemon-reload
+```
+
+Restoring fstab does not change currently mounted filesystems. Tests use
+temporary fstab files and mocked privileged operations, never your real disks:
+
+```bash
+PYTHONPATH=stow/scripts/scripts ~/.local/share/disks/venv/bin/python -m unittest discover -s stow/scripts/scripts/disks/tests -v
+ruff check stow/scripts/scripts/disks
+ruff format --check stow/scripts/scripts/disks
+bash -n stow/scripts/scripts/disks.sh stow/scripts/scripts/disks-setup.sh scripts/install-shell-tools.sh
+```
+
 ## Download links
 Run:
 ```bash

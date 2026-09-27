@@ -1,5 +1,11 @@
 # Packages needed for the Hyprland desktop setup
 # Based on what I actually installed manually + the config dependencies.
+# Linux disk TUI (ntfs3 is provided by the kernel).
+python
+python-pip
+util-linux
+sudo
+systemd
 hyprland
 hyprlock
 hypridle
