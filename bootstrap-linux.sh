@@ -8,6 +8,7 @@ RUN_LINK=0
 RUN_APPS=0
 AUTO_YES=0
 DRY_RUN=0
+INCOMPLETE=0
 
 usage() {
   cat <<EOF
@@ -32,10 +33,14 @@ run_step() {
   shift
   echo
   echo "==> $title"
-  if [[ $DRY_RUN -eq 1 ]]; then
-    DRY_RUN=1 "$@"
-  else
-    "$@"
+  local status=0
+  set +e
+  DRY_RUN="$DRY_RUN" "$@"
+  status=$?
+  set -e
+  if [[ $status -ne 0 ]]; then
+    echo "Step incomplete: $title (exit $status)"
+    INCOMPLETE=1
   fi
 }
 
@@ -156,6 +161,11 @@ if [[ $RUN_LINK -eq 1 ]]; then
   run_step 'Linking configs into your home directory' env DRY_RUN="$DRY_RUN" "$ROOT/scripts/link-configs.sh"
 fi
 
+# A shell-only rerun can repair startup configuration when configs are linked.
+if [[ $RUN_SHELL -eq 1 && $RUN_LINK -eq 0 && -f "$HOME/.config/workspace-setup/zsh-init.zsh" ]]; then
+  run_step 'Configuring shell startup' env DRY_RUN="$DRY_RUN" "$ROOT/scripts/configure-shell.sh"
+fi
+
 if [[ $RUN_APPS -eq 1 ]]; then
   if [[ $AUTO_YES -eq 1 ]] || ask_yes_no 'Install downloaded vendor apps now (Warp / JetBrains / Cursor / GitKraken / gaming apps)?'; then
     if [[ $AUTO_YES -eq 1 ]]; then
@@ -170,4 +180,11 @@ if [[ $RUN_APPS -eq 1 ]]; then
 fi
 
 echo
-echo 'Done.'
+if [[ $INCOMPLETE -ne 0 ]]; then
+  echo 'Bootstrap incomplete; review the skipped or failed steps above.'
+  exit 2
+fi
+echo 'Bootstrap completed.'
+if [[ $DRY_RUN -eq 0 && ( $RUN_LINK -eq 1 || $RUN_SHELL -eq 1 ) ]]; then
+  echo 'Open a new terminal or run: exec zsh -l'
+fi

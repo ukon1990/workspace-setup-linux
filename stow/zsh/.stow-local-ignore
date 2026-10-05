@@ -1,0 +1,2 @@
+# Keep user startup files under configure-shell.sh ownership.
+^/\.zshrc$

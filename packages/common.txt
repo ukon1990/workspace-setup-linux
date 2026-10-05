@@ -12,3 +12,6 @@ lazygit
 yay
 rbenv
 ruby-build
+bash
+python
+python-pip

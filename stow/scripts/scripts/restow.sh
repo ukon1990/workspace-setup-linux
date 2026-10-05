@@ -43,6 +43,8 @@ normalize_matching_symlinks() {
 
     for package in "${packages[@]}"; do
         while IFS= read -r -d '' src; do
+            # Startup files belong to configure-shell.sh, including legacy links.
+            [[ "$package" == zsh && "$src" == "$STOW_DIR/zsh/.zshrc" ]] && continue
             dst="$HOME/${src#"$STOW_DIR/$package/"}"
             [[ -L "$dst" ]] || continue
 
@@ -50,7 +52,7 @@ normalize_matching_symlinks() {
             dst_resolved="$(resolve_path "$dst" 2>/dev/null || true)"
             [[ -n "$src_resolved" && "$src_resolved" == "$dst_resolved" ]] || continue
 
-            rel_target="$(relative_path "$src" "$(dirname "$dst")")"
+            rel_target="$(relative_path "$src_resolved" "$(cd "$(dirname "$dst")" && pwd -P)")"
             if [[ "$DRY_RUN" == 1 ]]; then
                 echo "Would normalize matching symlink: $dst -> $rel_target"
             else
@@ -134,7 +136,10 @@ restow_pkg() {
     local output="" status=0
 
     [[ "$DRY_RUN" == 1 ]] && args+=(-n)
-    args+=("${stow_extra_args[@]}" "$pkg")
+    if [[ ${#stow_extra_args[@]} -gt 0 ]]; then
+        args+=("${stow_extra_args[@]}")
+    fi
+    args+=("$pkg")
 
     echo "==> restow $pkg"
     set +e
@@ -179,6 +184,18 @@ fi
 if [[ ${#failed[@]} -gt 0 ]]; then
     echo 'Failed:'
     printf '  - %s\n' "${failed[@]}"
-    exit 1
+else
+    echo 'Failed: (none)'
 fi
-echo 'Failed: (none)'
+
+config_status=0
+for package in "${packages[@]}"; do
+    if [[ "$package" == zsh ]]; then
+        DRY_RUN="$DRY_RUN" "$REPO_ROOT/scripts/configure-shell.sh" || config_status=$?
+        break
+    fi
+done
+if [[ ${#failed[@]} -gt 0 || ${#skipped_conflicts[@]} -gt 0 || $config_status -ne 0 ]]; then
+    echo 'Restow incomplete; resolve the reported conflicts or failures.'
+    exit 2
+fi

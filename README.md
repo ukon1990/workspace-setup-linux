@@ -185,9 +185,17 @@ python3 -m unittest discover -s stow/waybar/.config/waybar/scripts/tests -v
 
 ## Jira and GitHub task browser
 
-`tasks` is a read-only Textual browser. Select exactly one backend:
+`tasks` is a read-only Textual browser. Run `tasks` to choose GitHub or Jira
+from a TUI menu. The most recently opened backend is highlighted at the top;
+press Enter to reopen it, arrows or `j`/`k` to choose, or Esc/`q` to cancel.
+Choosing Jira prompts for a project key when none is supplied or configured.
+The choice is remembered globally in `~/.local/state/tasks/launcher.yaml`,
+including launches with explicit flags.
+
+Use a backend flag to skip the menu (required outside an interactive terminal):
 
 ```bash
+tasks
 tasks --jira --project PROJ
 tasks --jira PROJ-123
 tasks --jira https://example.atlassian.net/browse/PROJ-123
@@ -250,13 +258,30 @@ GitHub repository. `c` clears both active filters and that scope's saved choices
 State is stored at `~/.local/state/tasks/filters.yaml`. The `/` free-text filter
 remains local to the current session and is not persisted. The status bar shows
 the work mode, ready count, and any unknown or partial results. Refresh with `r`
-to update blocker statuses; `R` discards cached results and loads them again.
+to fetch changed issues and update blocker statuses; `R` resets the selected
+project or repository cache and loads it again.
 Work filters apply only to issues; pull-request browsing is unchanged.
 
 In issue details, every relationship-tree issue has a completion icon: `✓`
 completed, `○` unfinished (including in progress), or `?` unknown. Completed
-links remain visible. Press `r` to refresh linked statuses; unavailable targets
+links remain visible. Press `r` to sync changed issues and refresh linked statuses; unavailable targets
 or links beyond the 80 additional-lookup limit show `?`.
+
+Issue lists and loaded descriptions, comments, parents, and dependencies are
+persisted per Jira project or GitHub repository under
+`~/.local/state/tasks/cache`. The detail cache keeps the 200 most recently used
+issues per scope. On opening an issue scope, the browser syncs backend changes
+before displaying cached data, including issues outside the current filters.
+Startup and `r` use paginated incremental updates with a five-minute overlap
+around the last successful sync. Unchanged cached issues are reused without
+refetching every relationship. `R` clears only the selected scope and rebuilds
+it. Failed syncs keep cached data visible with a status-bar warning.
+
+The sortable **Changed** column marks changed issue versions with `*`; overview
+and detail-tree issue keys carry the same marker. Markers stay for the current
+session. The first sync establishes a baseline and does not mark every issue
+as changed. Opening a relationship in another project or repository syncs that
+target scope before loading its detail.
 
 Use `s` for a fresh backend search, `j`/`k` or arrows to move, `Enter` to open,
 `Tab` to focus relationships, `o` to open the task URL in a browser, `?` for
@@ -455,3 +480,48 @@ Config to keep in dotfiles:
 - To install the newest stable Ruby instead, run `RUBY_VERSION=latest ./scripts/install-shell-tools.sh`.
 - `bootstrap.sh --yes` runs all stages without prompts (OS-appropriate set).
 - `bootstrap.sh --dry-run` prints the planned actions without changing anything.
+
+## Shell bootstrap and command availability
+
+On macOS, `./bootstrap.sh` prepares compatible shell-tool dependencies before
+running installers. `--shell` performs the same checks without requiring a prior
+`--packages` run: Bash 4+ for SDKMAN, Python 3.12+ for the `tasks` runtime, and
+rbenv with ruby-build for Ruby. Missing dependencies are installed with Homebrew;
+installed Bash or Python formulas are upgraded only when their versions are too
+old. Compatible existing tools are reused. `BASH_BIN` and `PYTHON_BIN` can select
+specific executables; an incompatible explicit selection is reported rather than
+silently replaced. Linux uses the same checks with dependencies from its package
+lists.
+
+Bootstrap refreshes its own environment automatically and uses the verified Bash
+for SDKMAN and Python for runtime setup. A dependency problem skips the affected
+tools while independent setup continues. Skips, installer failures, and linking
+conflicts produce an incomplete report and exit status 2; resolve the reported
+problem and rerun the relevant step.
+
+`--link` links the existing command launchers into `~/.local/bin` and configures
+Zsh to load `~/.config/workspace-setup/zsh-init.zsh`. Existing `.zshrc` and
+`.zprofile` settings are preserved, with bootstrap-owned additions between
+`# start workspace-setup` and `# end workspace-setup`. Reruns update that block
+without duplicating it. Existing user files are backed up next to the original as
+`<filename>.workspace-setup.bak` before their first modification. `ZDOTDIR` is
+respected. The repository's `.zshrc` remains a compatibility loader for older
+symlink-based installations; new Stow and restow passes leave user startup files
+under bootstrap's management.
+
+Homebrew initialization is persisted in `.zprofile` using its detected location
+on Apple Silicon or Intel. The shared Zsh initialization makes `tasks` and
+`restow` available through `~/.local/bin`, and initializes available nvm, SDKMAN,
+and rbenv installations. `disks` is a Linux tool. Helpers exposed only through
+Fish functions retain their existing behavior.
+
+After bootstrap completes, open a new terminal or run `exec zsh -l` to refresh
+your existing terminal. To repair command links and startup configuration, rerun
+`./bootstrap.sh --link`. `--dry-run` prints intended changes without installing
+packages, editing startup files, or creating links.
+
+Focused verification:
+
+```bash
+python3 -m unittest discover -s scripts/tests -p 'test_shell_*.py' -v
+```

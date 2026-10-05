@@ -1,11 +1,9 @@
-if [[ -f /usr/share/cachyos-zsh-config/cachyos-config.zsh ]]; then
-  source /usr/share/cachyos-zsh-config/cachyos-config.zsh
+# Compatibility loader for machines that previously Stowed this file.
+# start workspace-setup
+if [[ -r "$HOME/.config/workspace-setup/zsh-init.zsh" ]]; then
+  source "$HOME/.config/workspace-setup/zsh-init.zsh"
+else
+  # Existing links also work immediately after pulling, before the next restow.
+  source "${${(%):-%x}:A:h}/.config/workspace-setup/zsh-init.zsh"
 fi
-
-#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
-export SDKMAN_DIR="$HOME/.sdkman"
-[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
-
-
-# User local binaries (restow and other helpers)
-export PATH="$HOME/.local/bin:$PATH"
+# end workspace-setup

@@ -13,3 +13,5 @@ rbenv
 ruby-build
 gh
 fish
+bash
+python

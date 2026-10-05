@@ -58,6 +58,12 @@ if [[ "$DRY_RUN" != 1 ]] && ! command -v stow >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ "$DRY_RUN" == 1 ]] && ! command -v stow >/dev/null 2>&1; then
+  echo "Would link packages with Stow once installed: ${packages[*]}"
+  DRY_RUN=1 "$ROOT/scripts/configure-shell.sh"
+  exit 0
+fi
+
 echo "Linking packages for $os_name:"
 printf ' - %s\n' "${packages[@]}"
 echo
@@ -130,8 +136,16 @@ else
   echo 'Failed: (none)'
 fi
 
-if [[ ${#failed[@]} -gt 0 ]]; then
-  exit 1
+# Configure profiles even if an unrelated package failed to link.
+config_status=0
+DRY_RUN="$DRY_RUN" "$ROOT/scripts/configure-shell.sh" || config_status=$?
+if [[ "$DRY_RUN" != 1 && ! -x "$HOME/.local/bin/tasks" ]]; then
+  echo "Missing tasks launcher: $HOME/.local/bin/tasks. Resolve the scripts Stow conflict and rerun --link." >&2
+  config_status=2
+fi
+if [[ ${#failed[@]} -gt 0 || ${#skipped_conflicts[@]} -gt 0 || $config_status -ne 0 ]]; then
+  echo 'Config setup incomplete; see conflicts and failures above.'
+  exit 2
 fi
 
 if [[ "$DRY_RUN" == 1 ]]; then
