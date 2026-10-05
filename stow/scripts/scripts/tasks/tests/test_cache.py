@@ -86,11 +86,11 @@ class CacheRoundTripTests(unittest.TestCase):
             save_entry(scope, entry, cache_dir=cache_dir)
             path = cache_dir / "github-acme-app.yaml"
             raw = path.read_text(encoding="utf-8")
-            path.write_text(raw.replace("format: 2", "format: 1"), encoding="utf-8")
+            path.write_text(raw.replace("format: 4", "format: 2"), encoding="utf-8")
             self.assertIsNone(load_entry(scope, None, AssigneeFilter.ALL, cache_dir=cache_dir))
 
     def test_format_since_helpers(self):
-        self.assertEqual(format_github_since("2026-09-21T18:30:00+00:00"), "2026-09-21")
+        self.assertEqual(format_github_since("2026-09-21T18:30:00+00:00"), "2026-09-21T18:30:00+00:00")
         self.assertEqual(format_jira_since("2026-09-21T18:30:00+00:00"), "2026-09-21 18:30")
 
 

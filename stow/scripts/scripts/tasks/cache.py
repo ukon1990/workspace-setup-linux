@@ -17,7 +17,7 @@ from .models import Backend, BackendIdentity, CiState, PullSummary, TaskSummary
 
 DEFAULT_CACHE_DIR = Path("~/.local/state/tasks/cache")
 # Bump when summary fields required for overview change (forces full refetch).
-CACHE_FORMAT_VERSION = 2
+CACHE_FORMAT_VERSION = 4
 PULL_CACHE_FORMAT_VERSION = 1
 _SCOPE_RE = re.compile(r"^(jira:[A-Z][A-Z0-9_]*|github:[^/:\s]+/[^/:\s]+)$")
 _DETAIL_CAP = 200
@@ -35,6 +35,7 @@ class CacheEntry:
     assignee: AssigneeFilter
     items: dict[str, TaskSummary] = field(default_factory=dict)
     details: dict[str, dict[str, Any]] = field(default_factory=dict)
+    revision: int = 0
 
     def merge_items(self, tasks: Sequence[TaskSummary]) -> None:
         for task in tasks:
@@ -64,8 +65,8 @@ def utc_now_iso() -> str:
 
 
 def format_github_since(synced_at: str) -> str:
-    """GitHub search accepts YYYY-MM-DD (day precision is enough for deltas)."""
-    return synced_at[:10]
+    """Keep full ISO timestamp precision for GitHub update searches."""
+    return synced_at
 
 
 def format_jira_since(synced_at: str) -> str:
@@ -216,6 +217,7 @@ def _encode_entry(entry: CacheEntry) -> dict[str, Any]:
             stable_id: _encode_summary(task) for stable_id, task in sorted(entry.items.items())
         },
         "details": dict(list(entry.details.items())[-_DETAIL_CAP:]),
+        "revision": entry.revision,
     }
 
 
@@ -253,6 +255,7 @@ def _decode_entry(payload: Mapping[str, Any]) -> CacheEntry:
         assignee=assignee,
         items=items,
         details={key: value for key, value in details.items() if isinstance(key, str)},
+        revision=payload.get("revision", 0) if isinstance(payload.get("revision", 0), int) else 0,
     )
 
 
@@ -294,6 +297,9 @@ def _encode_summary(task: TaskSummary) -> dict[str, Any]:
         "assignees": list(task.assignees),
         "labels": list(task.labels),
         "components": list(task.components),
+        "completed": task.completed,
+        "dependencies_complete": task.dependencies_complete,
+        "updated_at": task.updated_at,
     }
     if task.task_type:
         payload["task_type"] = task.task_type
@@ -335,6 +341,9 @@ def _decode_summary(payload: Mapping[str, Any]) -> TaskSummary:
         parent=parent,
         blocked_by=_decode_identity_tuple(payload.get("blocked_by")),
         blocks=_decode_identity_tuple(payload.get("blocks")),
+        completed=payload.get("completed") if isinstance(payload.get("completed"), bool) else None,
+        dependencies_complete=payload.get("dependencies_complete") is True,
+        updated_at=payload.get("updated_at") if isinstance(payload.get("updated_at"), str) else None,
     )
 
 

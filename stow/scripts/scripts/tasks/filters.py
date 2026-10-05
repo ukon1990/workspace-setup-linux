@@ -35,6 +35,16 @@ class AssigneeFilter(str, Enum):
         }[self]
 
 
+class WorkFilter(str, Enum):
+    ALL = "all"
+    AVAILABLE = "available"
+    READY_ONLY = "ready_only"
+
+    @property
+    def label(self) -> str:
+        return {self.ALL: "All", self.AVAILABLE: "Available", self.READY_ONLY: "Ready only"}[self]
+
+
 class FilterStateError(ValueError):
     """Filter state could not be validated or safely changed."""
 
@@ -45,19 +55,30 @@ class FilterLoadResult:
     warning: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class WorkFilterLoadResult:
+    selection: WorkFilter = WorkFilter.ALL
+    warning: Optional[str] = None
+
+
 def load_assignee_filter(scope: str, path: Optional[Union[str, Path]] = None) -> FilterLoadResult:
-    """Load one scope, falling back to ALL with a warning for invalid state."""
+    return _load_filter(scope, "assignee", FilterLoadResult, path)
+
+
+def load_work_filter(scope: str, path: Optional[Union[str, Path]] = None) -> WorkFilterLoadResult:
+    return _load_filter(scope, "work", WorkFilterLoadResult, path)
+
+
+def _load_filter(scope, field, result_type, path):
     _validate_scope(scope)
     state_path = _state_path(path)
     if not state_path.exists():
-        return FilterLoadResult()
-
+        return result_type()
     try:
         scopes = _read_scopes(state_path)
     except FilterStateError as error:
-        return FilterLoadResult(warning=str(error))
-
-    return FilterLoadResult(selection=scopes.get(scope, AssigneeFilter.ALL))
+        return result_type(warning=str(error))
+    return result_type(selection=scopes.get(scope, _defaults())[field])
 
 
 def save_assignee_filter(
@@ -65,30 +86,44 @@ def save_assignee_filter(
     selection: Union[AssigneeFilter, str],
     path: Optional[Union[str, Path]] = None,
 ) -> None:
-    """Atomically save one scope while preserving all other scopes."""
-    _validate_scope(scope)
-    selected = _selection(selection)
-    state_path = _state_path(path)
-    with _state_lock(state_path):
-        scopes = _read_scopes(state_path) if state_path.exists() else {}
-        scopes[scope] = selected
-        _write_scopes(state_path, scopes)
+    _save_filter(scope, "assignee", _selection(selection), path)
+
+
+def save_work_filter(
+    scope: str,
+    selection: Union[WorkFilter, str],
+    path: Optional[Union[str, Path]] = None,
+) -> None:
+    _save_filter(scope, "work", _work_selection(selection), path)
 
 
 def clear_assignee_filter(scope: str, path: Optional[Union[str, Path]] = None) -> None:
-    """Remove one scope while preserving all other scopes."""
+    _save_filter(scope, "assignee", AssigneeFilter.ALL, path)
+
+
+def clear_work_filter(scope: str, path: Optional[Union[str, Path]] = None) -> None:
+    _save_filter(scope, "work", WorkFilter.ALL, path)
+
+
+def _defaults() -> dict:
+    return {"assignee": AssigneeFilter.ALL, "work": WorkFilter.ALL}
+
+
+def _save_filter(scope, field, selected, path):
+    """Update one filter atomically, preserving the other filter and scopes."""
     _validate_scope(scope)
     state_path = _state_path(path)
     with _state_lock(state_path):
-        if not state_path.exists():
-            return
-        scopes = _read_scopes(state_path)
-        if scope not in scopes:
-            return
-        del scopes[scope]
+        scopes = _read_scopes(state_path) if state_path.exists() else {}
+        entry = dict(scopes.get(scope, _defaults()))
+        entry[field] = selected
+        if entry == _defaults():
+            scopes.pop(scope, None)
+        else:
+            scopes[scope] = entry
         if scopes:
             _write_scopes(state_path, scopes)
-        else:
+        elif state_path.exists():
             state_path.unlink()
 
 
@@ -111,6 +146,14 @@ def _selection(value: Union[AssigneeFilter, str]) -> AssigneeFilter:
         raise FilterStateError(f"assignee filter must be one of: {allowed}") from error
 
 
+def _work_selection(value: Union[WorkFilter, str]) -> WorkFilter:
+    try:
+        return WorkFilter(value)
+    except (TypeError, ValueError) as error:
+        allowed = ", ".join(option.value for option in WorkFilter)
+        raise FilterStateError(f"work filter must be one of: {allowed}") from error
+
+
 def _read_scopes(path: Path) -> dict:
     try:
         with path.open(encoding="utf-8") as state_file:
@@ -127,9 +170,12 @@ def _read_scopes(path: Path) -> dict:
     for scope, raw_filter in raw_scopes.items():
         _validate_scope(scope)
         entry = _mapping(raw_filter, f"filter state scope {scope}")
-        if set(entry) != {"assignee"}:
-            raise FilterStateError(f"filter state scope {scope} must contain only assignee")
-        scopes[scope] = _selection(entry["assignee"])
+        if not entry or not set(entry) <= {"assignee", "work"}:
+            raise FilterStateError(f"filter state scope {scope} must contain assignee or work")
+        scopes[scope] = {
+            "assignee": _selection(entry.get("assignee", AssigneeFilter.ALL)),
+            "work": _work_selection(entry.get("work", WorkFilter.ALL)),
+        }
     return scopes
 
 
@@ -155,11 +201,12 @@ def _state_lock(path: Path) -> Iterator[None]:
         raise FilterStateError(f"Could not lock filter state {path}: {error}") from error
 
 
-def _write_scopes(path: Path, scopes: Mapping[str, AssigneeFilter]) -> None:
+def _write_scopes(path: Path, scopes: Mapping[str, Mapping[str, Enum]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "scopes": {
-            scope: {"assignee": selection.value} for scope, selection in sorted(scopes.items())
+            scope: {field: value.value for field, value in entry.items()}
+            for scope, entry in sorted(scopes.items())
         }
     }
     temporary_path = None

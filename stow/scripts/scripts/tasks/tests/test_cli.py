@@ -24,9 +24,11 @@ def summary(identity):
 
 
 class ParserTests(unittest.TestCase):
-    def test_requires_exactly_one_backend(self):
+    def test_allows_no_backend_but_rejects_both(self):
         parser = build_parser()
-        for arguments in ([], ["--jira", "--gh"]):
+        args = parser.parse_args([])
+        self.assertFalse(args.jira or args.gh)
+        for arguments in (["--jira", "--gh"],):
             with (
                 self.subTest(arguments=arguments),
                 redirect_stderr(StringIO()),
@@ -120,6 +122,11 @@ class AdapterTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch("tasks.cli.save_recent_backend")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     @patch("tasks.cli.resolve_github_repository", return_value=None)
     @patch("tasks.cli.load_assignee_filter")
     @patch("tasks.tui.run")

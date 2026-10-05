@@ -10,12 +10,17 @@ from typing import TYPE_CHECKING, Optional, Sequence
 from .config import ConfigError, TasksConfig, load_config
 from .filters import (
     AssigneeFilter,
+    WorkFilter,
     clear_assignee_filter,
+    clear_work_filter,
     load_assignee_filter,
+    load_work_filter,
     save_assignee_filter,
+    save_work_filter,
 )
 from .github import GithubBackend, GithubError
 from .jira import JiraBackend, JiraError
+from .launcher import load_recent_backend, save_recent_backend
 from .models import Backend, BackendIdentity, TaskDetail, TaskSummary
 from .pulls import GithubPullsBackend, resolve_github_repository
 from .references import github_identity, jira_identity
@@ -69,6 +74,9 @@ class JiraTuiBackend:
             include_done=include_closed,
         )
 
+    def list_updates(self, scope: str, since: str):
+        return self.backend.list_updates(scope, since)
+
     def get_task(self, identity: BackendIdentity, refresh: bool = False) -> TaskDetail:
         if identity.backend is not Backend.JIRA:
             raise JiraError("Cannot open a non-Jira task with the Jira backend.")
@@ -105,6 +113,9 @@ class GithubTuiBackend:
             include_closed=include_closed,
         )
 
+    def list_updates(self, scope: str, since: str):
+        return self.backend.list_updates(scope, since)
+
     def get_task(self, identity: BackendIdentity, refresh: bool = False) -> TaskDetail:
         if identity.backend is not Backend.GITHUB:
             raise GithubError("Cannot open a non-GitHub task with the GitHub backend.")
@@ -114,14 +125,16 @@ class GithubTuiBackend:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tasks",
-        description="Browse Jira or GitHub issues in a read-only terminal UI.",
+        description="Browse Jira or GitHub issues in a read-only terminal UI; omit backend flags to choose interactively.",
     )
-    backend = parser.add_mutually_exclusive_group(required=True)
+    backend = parser.add_mutually_exclusive_group()
     backend.add_argument("--jira", action="store_true", help="use Jira through acli")
     backend.add_argument("--gh", action="store_true", help="use GitHub Issues through gh")
     parser.add_argument("target", nargs="?", help="issue key, number, qualified reference, or URL")
     parser.add_argument("--project", type=_project, help="Jira project key")
-    parser.add_argument("--repo", type=_repository, help="GitHub repository in owner/repo form (issues and/or PRs)")
+    parser.add_argument(
+        "--repo", type=_repository, help="GitHub repository in owner/repo form (issues and/or PRs)"
+    )
     parser.add_argument("--query", help="start with a backend search")
     parser.add_argument("--limit", type=_limit, help="maximum issues to load (1-1000)")
     parser.add_argument("--config", help="YAML config path")
@@ -137,6 +150,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         config = load_config(args.config)
         if args.target and args.query:
             parser.error("--query cannot be used with a direct issue target")
+        if not args.jira and not args.gh:
+            if not sys.stdin.isatty() or not sys.stdout.isatty():
+                parser.error("pass --gh or --jira when running without an interactive terminal")
+            from .tui.launcher import pick_backend
+
+            target = jira_identity(args.target) if args.target else None
+            selected = pick_backend(
+                load_recent_backend(),
+                needs_project=not (args.project or config.jira.default_project or target),
+                validate_project=_project,
+            )
+            if selected is None:
+                return 0
+            args.jira = selected.backend is Backend.JIRA
+            args.gh = selected.backend is Backend.GITHUB
+            if selected.project is not None:
+                args.project = selected.project
         if args.jira:
             _run_jira(parser, args, config)
         else:
@@ -166,7 +196,11 @@ def _run_jira(
         parser.error("Jira list mode requires --project KEY or jira.default_project in config")
 
     backend = JiraBackend(config.jira)
-    backend.validate()
+    try:
+        backend.validate()
+    except JiraError:
+        if not _has_saved_issues(f"jira:{project.upper()}"):
+            raise
     adapter = JiraTuiBackend(
         backend,
         project.upper(),
@@ -209,7 +243,13 @@ def _run_github(
         limit=args.limit or config.github.limit,
         search=args.search if args.search is not None else config.github.search,
     )
-    repository = backend.validate()
+    try:
+        repository = backend.validate()
+    except GithubError:
+        repository = repository or _local_github_repository()
+        if not repository or not _has_saved_issues(f"github:{repository.lower()}"):
+            raise
+        backend.repository = repository
     if args.target and identity is None:
         identity = github_identity(args.target, default_repo=repository)
         if identity is None:
@@ -230,6 +270,32 @@ def _run_github(
         pulls_error=pulls_error,
         pull_excludes=excludes,
     )
+
+
+def _local_github_repository() -> Optional[str]:
+    """Resolve an offline cache scope from this checkout's origin."""
+    from .process import ProcessError, run_text
+
+    try:
+        remote = run_text(["git", "remote", "get-url", "origin"], timeout=5).strip()
+    except ProcessError:
+        return None
+    match = re.fullmatch(
+        r"(?:git@github\.com:|ssh://git@github\.com/|https?://github\.com/)"
+        r"([^/\s]+/[^/\s]+?)(?:\.git)?/?",
+        remote,
+    )
+    return match[1].lower() if match else None
+
+
+def _has_saved_issues(scope: str) -> bool:
+    from .cache import CacheError
+    from .issue_cache import load_store
+
+    try:
+        return bool(load_store(scope).items)
+    except CacheError:
+        return False
 
 
 def _make_pulls_backend(
@@ -281,17 +347,32 @@ def _run_tui(
     if loaded.warning:
         print(f"tasks: warning: {loaded.warning}", file=sys.stderr)
 
+    loaded_work = load_work_filter(scope)
+
+    def persist_work(selection: WorkFilter) -> None:
+        if selection is WorkFilter.ALL:
+            clear_work_filter(scope)
+        else:
+            save_work_filter(scope, selection)
+
     def persist(selection: AssigneeFilter) -> None:
         if selection is AssigneeFilter.ALL:
             clear_assignee_filter(scope)
         else:
             save_assignee_filter(scope, selection)
 
+    try:
+        save_recent_backend(Backend(scope.split(":", 1)[0]))
+    except OSError as error:
+        print(f"tasks: warning: could not remember backend: {error}", file=sys.stderr)
+
     run(
         adapter,
         initial_identity=identity,
         query=query,
         initial_assignee_filter=loaded.selection,
+        initial_work_filter=loaded_work.selection,
+        on_work_filter_change=persist_work,
         on_assignee_filter_change=persist,
         cache_scope=scope,
         pulls_backend=pulls_backend,

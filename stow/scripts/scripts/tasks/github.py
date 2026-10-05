@@ -3,6 +3,7 @@
 import sys
 from typing import Any, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
+from .backend_updates import github_updates
 from .filters import AssigneeFilter
 from .models import (
     BackendIdentity,
@@ -11,17 +12,18 @@ from .models import (
     TaskDetail,
     TaskRelationship,
     TaskSummary,
+    UpdateBatch,
 )
 from .process import ProcessError, ProcessErrorKind, run_json, run_text
 from .references import github_identity, parse_github_references
 
 _LIST_FIELDS = (
     "number,title,state,stateReason,assignees,labels,url,issueType,parent,"
-    "blockedBy,blocking"
+    "blockedBy,blocking,updatedAt"
 )
 _DETAIL_FIELDS = (
     "number,title,state,stateReason,assignees,labels,url,body,comments,"
-    "parent,subIssues,blockedBy,blocking,issueType"
+    "parent,subIssues,blockedBy,blocking,issueType,updatedAt"
 )
 
 
@@ -176,6 +178,10 @@ class GithubBackend:
             include_closed=include_closed,
         )
 
+    def list_updates(self, scope: str, since: str) -> UpdateBatch:
+        """Fetch project-wide changes independently of browser filters."""
+        return github_updates(scope, since, timeout=self.timeout)
+
     def get_issue(self, target: Union[str, int, BackendIdentity]) -> TaskDetail:
         """Fetch and normalize one issue without eagerly resolving its relations."""
         identity = self._identity(target)
@@ -221,8 +227,8 @@ def _normalize_summary(payload: Any, repository: str) -> TaskSummary:
     identity = BackendIdentity.github(number, repository, url=url)
     parent = None
     raw_parent = issue.get("parent")
-    if raw_parent is not None:
-        parent = _related_identity(_mapping(raw_parent, "GitHub parent"), repository)
+    if isinstance(raw_parent, dict):
+        parent = _related_identity(raw_parent, repository)
     return TaskSummary(
         identity=identity,
         title=title,
@@ -234,14 +240,53 @@ def _normalize_summary(payload: Any, repository: str) -> TaskSummary:
         parent=parent,
         blocked_by=_related_identities(issue.get("blockedBy"), repository),
         blocks=_related_identities(issue.get("blocking"), repository),
+        completed=_completed(issue),
+        dependencies_complete=_dependencies_complete(issue, repository),
+        updated_at=_optional_string(issue.get("updatedAt")),
     )
 
+
+
+def _completed(issue: Mapping[str, Any]) -> Optional[bool]:
+    state = issue.get("state")
+    if isinstance(state, str) and state.upper() in {"OPEN", "CLOSED"}:
+        return state.upper() == "CLOSED"
+    return None
+
+
+def _dependencies_complete(issue: Mapping[str, Any], repository: str) -> bool:
+    if "parent" not in issue or "blockedBy" not in issue:
+        return False
+    parent = issue["parent"]
+    if parent is not None and (
+        not isinstance(parent, dict) or _related_identity(parent, repository) is None
+    ):
+        return False
+    blocked = issue["blockedBy"]
+    if isinstance(blocked, dict):
+        nodes = blocked.get("nodes")
+        page_info = blocked.get("pageInfo") or {}
+        if not isinstance(page_info, dict) or page_info.get("hasNextPage"):
+            return False
+        total = blocked.get("totalCount")
+        if not isinstance(nodes, list) or (isinstance(total, int) and total > len(nodes)):
+            return False
+    elif isinstance(blocked, list):
+        nodes = blocked
+    else:
+        return False
+    return all(
+        isinstance(item, dict) and _related_identity(item, repository) is not None
+        for item in nodes
+    )
 
 def _related_identities(value: Any, repository: str) -> Tuple[BackendIdentity, ...]:
     identities: List[BackendIdentity] = []
     seen: set[str] = set()
     for item in _items(value):
-        identity = _related_identity(_mapping(item, "GitHub issue relationship"), repository)
+        if not isinstance(item, dict):
+            continue
+        identity = _related_identity(item, repository)
         if identity is None or identity.stable_id in seen:
             continue
         seen.add(identity.stable_id)
@@ -335,7 +380,9 @@ def _first_class_relationship(
     kind: RelationshipKind,
     label: str,
 ) -> Optional[TaskRelationship]:
-    item = _mapping(payload, "GitHub issue relationship")
+    if not isinstance(payload, dict):
+        return None
+    item = payload
     identity = _related_identity(item, default_repo)
     if identity is None:
         return None

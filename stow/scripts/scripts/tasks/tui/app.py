@@ -7,12 +7,11 @@ from typing import Callable, Optional, Sequence
 
 # Query terminal graphics support before Textual starts its IO threads.
 import textual_image.renderable  # noqa: F401
-from textual_image.widget import Image as _TerminalImage  # noqa: F401
-
 from textual.app import App
 from textual.screen import Screen
+from textual_image.widget import Image as _TerminalImage  # noqa: F401
 
-from ..filters import AssigneeFilter
+from ..filters import AssigneeFilter, WorkFilter
 from ..models import BackendIdentity, TaskSummary
 from ..pulls import GithubPullsBackend
 from .logic import TaskBackend, TasksController
@@ -69,6 +68,8 @@ def run(
     initial_identity: Optional[BackendIdentity] = None,
     query: Optional[str] = None,
     initial_assignee_filter: AssigneeFilter = AssigneeFilter.ALL,
+    initial_work_filter: WorkFilter = WorkFilter.ALL,
+    on_work_filter_change: Optional[Callable[[WorkFilter], None]] = None,
     on_assignee_filter_change: Optional[Callable[[AssigneeFilter], None]] = None,
     cache_scope: Optional[str] = None,
     cache_dir: Optional[str] = None,
@@ -80,6 +81,8 @@ def run(
     controller = TasksController(
         backend,
         initial_assignee_filter=initial_assignee_filter,
+        initial_work_filter=initial_work_filter,
+        on_work_filter_change=on_work_filter_change,
         on_assignee_filter_change=on_assignee_filter_change,
         cache_scope=cache_scope,
         cache_dir=cache_dir,

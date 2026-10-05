@@ -82,10 +82,21 @@ class TaskSummary:
     parent: Optional[BackendIdentity] = None
     blocked_by: Tuple[BackendIdentity, ...] = field(default_factory=tuple)
     blocks: Tuple[BackendIdentity, ...] = field(default_factory=tuple)
+    completed: Optional[bool] = None
+    dependencies_complete: bool = True
+    updated_at: Optional[str] = None
 
     @property
     def display_key(self) -> str:
         return self.identity.display_key
+
+
+@dataclass(frozen=True)
+class UpdateBatch:
+    """Scope-wide changes; incomplete batches must not advance a checkpoint."""
+
+    items: Tuple[TaskSummary, ...] = field(default_factory=tuple)
+    complete: bool = True
 
 
 @dataclass(frozen=True)
