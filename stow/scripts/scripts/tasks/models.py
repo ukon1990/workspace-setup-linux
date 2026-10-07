@@ -85,6 +85,8 @@ class TaskSummary:
     completed: Optional[bool] = None
     dependencies_complete: bool = True
     updated_at: Optional[str] = None
+    children: Tuple[BackendIdentity, ...] = field(default_factory=tuple)
+    children_complete: bool = True
 
     @property
     def display_key(self) -> str:
@@ -94,6 +96,14 @@ class TaskSummary:
 @dataclass(frozen=True)
 class UpdateBatch:
     """Scope-wide changes; incomplete batches must not advance a checkpoint."""
+
+    items: Tuple[TaskSummary, ...] = field(default_factory=tuple)
+    complete: bool = True
+
+
+@dataclass(frozen=True)
+class ChildrenBatch:
+    """Unfiltered child summaries for a requested set of parents."""
 
     items: Tuple[TaskSummary, ...] = field(default_factory=tuple)
     complete: bool = True

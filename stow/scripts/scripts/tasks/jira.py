@@ -7,10 +7,12 @@ from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple
 from .backend_updates import jira_updates
 from .config import JiraConfig
 from .filters import AssigneeFilter
+from .hierarchy_metadata import jira_child_metadata, jira_children
 from .jira_markdown import _adf_markdown, _attachment_index
 from .jira_markdown import _adf_text as _adf_text
 from .models import (
     BackendIdentity,
+    ChildrenBatch,
     Comment,
     RelationshipKind,
     TaskDetail,
@@ -24,9 +26,7 @@ from .references import jira_identity, parse_jira_references
 _PROJECT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _VERSION_RE = re.compile(r"\d+\.\d+(?:\.\d+)?")
 _LUCENE_RESERVED_RE = re.compile(r'([+\-!(){}\[\]^"~*?:\\/&|])')
-_SEARCH_FIELDS = (
-    "key,issuetype,summary,status,assignee,priority,labels,components,parent,issuelinks,updated"
-)
+_SEARCH_FIELDS = "key,issuetype,summary,status,assignee,priority,labels,components,parent,issuelinks,subtasks,updated"
 _DETAIL_FIELDS = (
     "key,issuetype,summary,status,assignee,priority,labels,components,"
     "description,comment,parent,subtasks,issuelinks,attachment,updated"
@@ -150,6 +150,10 @@ class JiraBackend:
     def list_updates(self, scope: str, since: str) -> UpdateBatch:
         """Fetch project-wide changes independently of browser filters."""
         return jira_updates(scope, since, timeout=self.timeout)
+
+    def list_children(self, parents: Sequence[BackendIdentity]) -> ChildrenBatch:
+        """Fetch all direct children without browser query or assignee filters."""
+        return jira_children(parents, timeout=self.timeout)
 
     def get_task(self, value: str) -> TaskDetail:
         """Fetch a Jira work item by key or browse URL."""
@@ -323,6 +327,7 @@ def _summary(item: Mapping[str, Any], *, fallback_url: Optional[str] = None) -> 
         if isinstance(parent_key, str) and parent_key:
             parent = BackendIdentity.jira(parent_key)
     blocked_by, blocks = _summary_block_links(fields)
+    children, children_complete = jira_child_metadata(fields)
     return TaskSummary(
         identity=BackendIdentity.jira(key, url=url),
         title=_text_value(fields.get("summary")) or "(untitled)",
@@ -339,8 +344,9 @@ def _summary(item: Mapping[str, Any], *, fallback_url: Optional[str] = None) -> 
         completed=_completed(fields),
         dependencies_complete=_dependencies_complete(fields),
         updated_at=_text_value(fields.get("updated")),
+        children=children,
+        children_complete=children_complete,
     )
-
 
 
 def _completed(fields: Mapping[str, Any]) -> Optional[bool]:
@@ -370,6 +376,7 @@ def _dependencies_complete(fields: Mapping[str, Any]) -> bool:
         ):
             return False
     return True
+
 
 def _summary_block_links(
     fields: Mapping[str, Any],
@@ -446,9 +453,7 @@ def _detail(
     return TaskDetail(summary, description, comments, tuple(relationships))
 
 
-def _comments(
-    value: Any, attachments: Optional[Mapping[str, str]] = None
-) -> Tuple[Comment, ...]:
+def _comments(value: Any, attachments: Optional[Mapping[str, str]] = None) -> Tuple[Comment, ...]:
     if isinstance(value, dict):
         value = value.get("comments") or value.get("values") or []
     if not isinstance(value, list):

@@ -39,7 +39,7 @@ class RecordingController(TasksController):
         return True
 
     def scope_for_identity(self, identity):
-        return "github:" + identity.repository
+        return "github:" + identity.repository if identity.repository else "jira:PROJ"
 
     def sync_scope(self, scope=None, *, refresh=False, full=False, on_progress=None):
         self.calls.append(("sync", scope, refresh, full))

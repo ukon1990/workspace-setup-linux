@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Mapping, Optional, Sequence
 
 from ..models import BackendIdentity, RelationshipKind, TaskDetail, TaskSummary
-from ..readiness import is_done_status
+from ..readiness import WorkState, evaluate, is_done_status, work_icon
 from .logic import dependency_suffix
 
 if TYPE_CHECKING:
@@ -48,14 +48,10 @@ class HierarchyNode:
         percent = round(100 * done / total) if total else 0
         marker = "★ " if self.is_current else ""
         deps = dependency_suffix(self.blocked_by, self.blocks)
-        return (
-            f"{prefix}[{done}/{total} {percent}%] {marker}"
-            f"{key} — {self.title}{deps}"
-            + (
-                f" · {self.work_label} · {self.ready_descendants} ready descendants"
-                if self.work_label
-                else ""
-            )
+        return f"{prefix}[{done}/{total} {percent}%] {marker}{key} — {self.title}{deps}" + (
+            f" · {self.work_label} · {self.ready_descendants} ready descendants"
+            if self.work_label
+            else ""
         )
 
 
@@ -315,29 +311,52 @@ def build_relationship_hierarchy(
     refresh: bool = False,
 ) -> HierarchyNode:
     """Ancestor chain above current plus descendants (and other links under current)."""
+    resolve = getattr(controller, "resolve_readiness", None)
+    normalize = getattr(controller, "hierarchy_detail", lambda target: target)
+    resolution_loads = 0
+    failed_ids = set()
+    if callable(resolve):
+        resolve([detail.summary], refresh=refresh, max_loads=DEFAULT_TREE_MAX_NODES)
+        resolution_loads = getattr(controller, "last_readiness_loads", 0)
+        failed_ids.update(getattr(controller, "last_readiness_failures", ()))
+        detail = normalize(detail)
     loaded: dict[str, Optional[TaskDetail]] = {detail.identity.stable_id: detail}
     link_loads = 0
 
     def load_detail(identity: BackendIdentity) -> Optional[TaskDetail]:
+        nonlocal link_loads
         key = identity.stable_id
+        if key in failed_ids:
+            loaded[key] = None
         if key not in loaded:
-            loaded[key], _error = controller.load_detail(identity, refresh=refresh)
+            cached = controller.detail_cache.get(key)
+            summary = controller.cached_items.get(key)
+            if callable(resolve) and (cached is not None or summary is not None):
+                loaded[key] = normalize(cached if cached is not None else TaskDetail(summary))
+            elif callable(resolve) and resolution_loads + link_loads >= DEFAULT_TREE_MAX_NODES:
+                loaded[key] = None
+            else:
+                link_loads += 1
+                target, _error = controller.load_detail(
+                    identity, refresh=refresh if not callable(resolve) else False
+                )
+                loaded[key] = normalize(target) if target is not None else None
+                if target is None:
+                    failed_ids.add(key)
         return loaded[key]
 
     def load_link(identity: BackendIdentity) -> Optional[TaskSummary]:
-        nonlocal link_loads
         key = identity.stable_id
         if key in loaded:
             return loaded[key].summary if loaded[key] is not None else None
-        if not refresh:
+        if not refresh or callable(resolve):
             cached = controller.detail_cache.get(key)
             summary = cached.summary if cached is not None else controller.cached_items.get(key)
             if summary is not None:
-                loaded[key] = TaskDetail(summary)
-                return summary
-        if link_loads >= DEFAULT_TREE_MAX_NODES:
+                loaded[key] = normalize(cached if cached is not None else TaskDetail(summary))
+                return loaded[key].summary
+        if resolution_loads + link_loads >= DEFAULT_TREE_MAX_NODES:
             return None
-        link_loads += 1
         target = load_detail(identity)
         return target.summary if target is not None else None
 
@@ -379,17 +398,23 @@ def build_relationship_hierarchy(
         node = ancestor
     compute_progress(node)
 
+    seeds = [target.summary for target in loaded.values() if target is not None]
+    if callable(resolve):
+        readiness = resolve(
+            seeds,
+            refresh=False,
+            max_loads=max(0, DEFAULT_TREE_MAX_NODES - resolution_loads - link_loads),
+            skip_ids=failed_ids,
+        )
+    else:
+        items = dict(getattr(controller, "cached_items", {}))
+        items.update((target.identity.stable_id, target) for target in seeds)
+        readiness = evaluate(items, seeds)
+
     def annotate(current: HierarchyNode) -> None:
         current.changed = current.identity.stable_id in getattr(controller, "changed_ids", ())
-        if current.completed is None and current.status.casefold().strip() in {"", "unknown"}:
-            current.completion_icon = "?"
-        else:
-            completed = (
-                current.completed
-                if current.completed is not None
-                else is_done_status(current.status)
-            )
-            current.completion_icon = "✓" if completed else "○"
+        state = readiness.states.get(current.identity.stable_id, WorkState.UNKNOWN)
+        current.completion_icon = work_icon(state)
         for child in current.children:
             annotate(child)
 

@@ -17,7 +17,7 @@ from .models import Backend, BackendIdentity, CiState, PullSummary, TaskSummary
 
 DEFAULT_CACHE_DIR = Path("~/.local/state/tasks/cache")
 # Bump when summary fields required for overview change (forces full refetch).
-CACHE_FORMAT_VERSION = 4
+CACHE_FORMAT_VERSION = 5
 PULL_CACHE_FORMAT_VERSION = 1
 _SCOPE_RE = re.compile(r"^(jira:[A-Z][A-Z0-9_]*|github:[^/:\s]+/[^/:\s]+)$")
 _DETAIL_CAP = 200
@@ -300,6 +300,8 @@ def _encode_summary(task: TaskSummary) -> dict[str, Any]:
         "completed": task.completed,
         "dependencies_complete": task.dependencies_complete,
         "updated_at": task.updated_at,
+        "children": [_encode_identity(child) for child in task.children],
+        "children_complete": task.children_complete,
     }
     if task.task_type:
         payload["task_type"] = task.task_type
@@ -328,6 +330,12 @@ def _decode_summary(payload: Mapping[str, Any]) -> TaskSummary:
     parent_raw = payload.get("parent")
     if isinstance(parent_raw, dict):
         parent = _decode_identity(parent_raw)
+    children = _decode_identity_tuple(payload.get("children"))
+    children_complete = (
+        payload.get("children_complete") is True
+        and isinstance(payload.get("children"), list)
+        and len(children) == len(payload["children"])
+    )
     return TaskSummary(
         identity=_decode_identity(identity_raw),
         title=title,
@@ -343,7 +351,11 @@ def _decode_summary(payload: Mapping[str, Any]) -> TaskSummary:
         blocks=_decode_identity_tuple(payload.get("blocks")),
         completed=payload.get("completed") if isinstance(payload.get("completed"), bool) else None,
         dependencies_complete=payload.get("dependencies_complete") is True,
-        updated_at=payload.get("updated_at") if isinstance(payload.get("updated_at"), str) else None,
+        updated_at=payload.get("updated_at")
+        if isinstance(payload.get("updated_at"), str)
+        else None,
+        children=children,
+        children_complete=children_complete,
     )
 
 
@@ -369,8 +381,7 @@ def _encode_pull_entry(entry: PullCacheEntry) -> dict[str, Any]:
         "query": entry.query,
         "assignee": entry.assignee.value,
         "items": {
-            stable_id: _encode_pull_summary(pull)
-            for stable_id, pull in sorted(entry.items.items())
+            stable_id: _encode_pull_summary(pull) for stable_id, pull in sorted(entry.items.items())
         },
     }
 

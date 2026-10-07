@@ -5,6 +5,7 @@ from typing import Any, Iterable, List, Mapping, Optional, Sequence, Tuple, Unio
 
 from .backend_updates import github_updates
 from .filters import AssigneeFilter
+from .hierarchy_metadata import github_children
 from .models import (
     BackendIdentity,
     Comment,
@@ -19,7 +20,7 @@ from .references import github_identity, parse_github_references
 
 _LIST_FIELDS = (
     "number,title,state,stateReason,assignees,labels,url,issueType,parent,"
-    "blockedBy,blocking,updatedAt"
+    "blockedBy,blocking,updatedAt,subIssues"
 )
 _DETAIL_FIELDS = (
     "number,title,state,stateReason,assignees,labels,url,body,comments,"
@@ -117,9 +118,7 @@ class GithubBackend:
         query = _join_search(self.search, search)
         if updated_since:
             query = _join_search(query, f"updated:>={updated_since}")
-        return self._list_issues(
-            repository, query, assignee_filter, include_closed=include_closed
-        )
+        return self._list_issues(repository, query, assignee_filter, include_closed=include_closed)
 
     def _list_issues(
         self,
@@ -229,6 +228,7 @@ def _normalize_summary(payload: Any, repository: str) -> TaskSummary:
     raw_parent = issue.get("parent")
     if isinstance(raw_parent, dict):
         parent = _related_identity(raw_parent, repository)
+    children, children_complete = github_children(issue, repository)
     return TaskSummary(
         identity=identity,
         title=title,
@@ -243,8 +243,9 @@ def _normalize_summary(payload: Any, repository: str) -> TaskSummary:
         completed=_completed(issue),
         dependencies_complete=_dependencies_complete(issue, repository),
         updated_at=_optional_string(issue.get("updatedAt")),
+        children=children,
+        children_complete=children_complete,
     )
-
 
 
 def _completed(issue: Mapping[str, Any]) -> Optional[bool]:
@@ -276,9 +277,9 @@ def _dependencies_complete(issue: Mapping[str, Any], repository: str) -> bool:
     else:
         return False
     return all(
-        isinstance(item, dict) and _related_identity(item, repository) is not None
-        for item in nodes
+        isinstance(item, dict) and _related_identity(item, repository) is not None for item in nodes
     )
+
 
 def _related_identities(value: Any, repository: str) -> Tuple[BackendIdentity, ...]:
     identities: List[BackendIdentity] = []

@@ -77,6 +77,9 @@ class JiraTuiBackend:
     def list_updates(self, scope: str, since: str):
         return self.backend.list_updates(scope, since)
 
+    def list_children(self, parents):
+        return self.backend.list_children(parents)
+
     def get_task(self, identity: BackendIdentity, refresh: bool = False) -> TaskDetail:
         if identity.backend is not Backend.JIRA:
             raise JiraError("Cannot open a non-Jira task with the Jira backend.")

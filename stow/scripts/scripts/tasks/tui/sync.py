@@ -1,5 +1,6 @@
 """Scope-wide incremental sync and persistent issue detail loading."""
 
+from dataclasses import replace
 from datetime import datetime
 
 from ..cache import CacheEntry, CacheError, load_entry, save_entry, utc_now_iso
@@ -97,6 +98,8 @@ class PersistentIssues:
                 ):
                     continue
                 store.items[key] = task
+                self.cached_items[key] = task
+                self.reconcile_hierarchy(task, old)
                 store.details.pop(key, None)
                 self.detail_cache.pop(key, None)
                 if old is not None or self._after(task.updated_at, previous):
@@ -192,7 +195,11 @@ class PersistentIssues:
             self.changed_ids.add(key)
             store.details.pop(key, None)
             self.detail_cache.pop(key, None)
+        if old is not None and order == 0 and old.children_complete and not task.children_complete:
+            task = replace(task, children=old.children, children_complete=True)
         store.items[key] = task
+        self.cached_items[key] = task
+        self.reconcile_hierarchy(task, old)
 
     def sync_dependencies(self, tasks, *, refresh=False, on_progress=None, skip_scope=None):
         """Sync known supporting scopes before readiness or relationships render."""
@@ -213,6 +220,7 @@ class PersistentIssues:
             summary = self.cached_items.get(key)
             if summary is not None:
                 queue.extend(summary.blocked_by)
+                queue.extend(summary.children)
                 if summary.parent is not None:
                     queue.append(summary.parent)
             queue.extend(self.dependency_links.get(key, ()))
@@ -250,6 +258,7 @@ class PersistentIssues:
                     return backup.details[key], None
             return None, str(error) or type(error).__name__
         self._merge_fetched_summary(store, detail.summary)
+        detail = replace(detail, summary=store.items.get(key, detail.summary))
         store.put_detail(detail)
         self.rebuild_backups.pop(scope, None)
         self.dependency_links[key] = tuple(relation.target for relation in detail.relationships)

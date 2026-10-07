@@ -31,6 +31,36 @@ def relation(kind, task, label=None):
     return TaskRelationship(kind, task.identity, label or kind.value.replace("_", " "), task.title)
 
 
+def fixture_detail(summary, *, relationships=(), **kwargs):
+    """Mirror backend-normalized relationship metadata in test fixtures."""
+    parents = [item.target for item in relationships if item.kind is RelationshipKind.PARENT]
+    summary = replace(
+        summary,
+        parent=parents[0] if parents else summary.parent,
+        children=tuple(
+            dict.fromkeys(
+                (
+                    *summary.children,
+                    *(item.target for item in relationships if item.kind is RelationshipKind.CHILD),
+                )
+            )
+        ),
+        blocked_by=tuple(
+            dict.fromkeys(
+                (
+                    *summary.blocked_by,
+                    *(
+                        item.target
+                        for item in relationships
+                        if item.kind is RelationshipKind.BLOCKED_BY
+                    ),
+                )
+            )
+        ),
+    )
+    return TaskDetail(summary, relationships=relationships, **kwargs)
+
+
 class Backend:
     def __init__(self, details):
         self.details = {detail.identity.stable_id: detail for detail in details}
@@ -46,6 +76,90 @@ def flatten(node):
 
 
 class RelationshipIconTests(unittest.TestCase):
+    def test_features_and_children_show_shared_blocked_states_both_backends(self):
+        for jira in (False, True):
+            with self.subTest(jira=jira):
+                available_feature = issue(15, jira=jira)
+                blocked_feature = issue(16, jira=jira)
+                ready = issue(1, jira=jira, parent=available_feature.identity)
+                blocked = [
+                    issue(
+                        i,
+                        jira=jira,
+                        parent=available_feature.identity,
+                        blocked_by=(ready.identity,),
+                    )
+                    for i in (2, 3)
+                ]
+                feature_blocked_children = [
+                    issue(
+                        i, jira=jira, parent=blocked_feature.identity, blocked_by=(ready.identity,)
+                    )
+                    for i in (4, 5)
+                ]
+                available_detail = fixture_detail(
+                    available_feature,
+                    relationships=tuple(
+                        relation(RelationshipKind.CHILD, target) for target in [ready, *blocked]
+                    ),
+                )
+                blocked_detail = fixture_detail(
+                    blocked_feature,
+                    relationships=tuple(
+                        relation(RelationshipKind.CHILD, target)
+                        for target in feature_blocked_children
+                    ),
+                )
+                controller = TasksController(
+                    Backend(
+                        [
+                            available_detail,
+                            blocked_detail,
+                            *(
+                                fixture_detail(target)
+                                for target in [ready, *blocked, *feature_blocked_children]
+                            ),
+                        ]
+                    )
+                )
+                available_tree = build_relationship_hierarchy(controller, available_detail)
+                self.assertEqual(available_tree.completion_icon, "○")
+                self.assertEqual(
+                    [child.completion_icon for child in available_tree.children], ["○", "x", "x"]
+                )
+                blocked_tree = build_relationship_hierarchy(controller, blocked_detail)
+                self.assertEqual(blocked_tree.completion_icon, "x")
+                self.assertEqual(
+                    [child.completion_icon for child in blocked_tree.children], ["x", "x"]
+                )
+                self.assertEqual((available_tree.done_leaves, available_tree.total_leaves), (0, 3))
+                self.assertEqual(
+                    [child.identity for child in available_tree.children],
+                    [ready.identity, *(target.identity for target in blocked)],
+                )
+
+    def test_external_link_feature_rollup_uses_hidden_children(self):
+        ready = issue(1)
+        blocked = issue(2, blocked_by=(ready.identity,))
+        feature = issue(16)
+        current = issue(20)
+        feature_detail = fixture_detail(
+            feature, relationships=(relation(RelationshipKind.CHILD, blocked),)
+        )
+        current_detail = fixture_detail(
+            current, relationships=(relation(RelationshipKind.RELATED, feature),)
+        )
+        controller = TasksController(
+            Backend(
+                [current_detail, feature_detail, fixture_detail(blocked), fixture_detail(ready)]
+            )
+        )
+        tree = build_relationship_hierarchy(controller, current_detail)
+        self.assertEqual(tree.completion_icon, "○")
+        self.assertEqual(tree.children[0].completion_icon, "x")
+        self.assertEqual(tree.children[0].identity, feature.identity)
+        self.assertEqual(tree.children[0].children, [])
+
     def test_all_kinds_both_backends_preserve_labels_titles_and_progress(self):
         for jira in (False, True):
             with self.subTest(jira=jira):
@@ -65,14 +179,14 @@ class RelationshipIconTests(unittest.TestCase):
                     RelationshipKind.RELATED,
                     RelationshipKind.MENTIONED,
                 ]
-                detail = TaskDetail(
+                detail = fixture_detail(
                     current,
                     relationships=tuple(
                         relation(kind, target) for kind, target in zip(kinds, targets, strict=True)
                     ),
                 )
                 controller = TasksController(
-                    Backend([detail, *(TaskDetail(target) for target in targets)])
+                    Backend([detail, *(fixture_detail(target) for target in targets)])
                 )
                 tree = build_relationship_hierarchy(controller, detail)
                 nodes = {node.identity.key: node for node in flatten(tree)}
@@ -103,7 +217,7 @@ class RelationshipIconTests(unittest.TestCase):
 
     def test_failure_targets_remain_visible_and_duplicate_fetches_are_deduplicated(self):
         current, missing = issue(1), issue(2)
-        detail = TaskDetail(
+        detail = fixture_detail(
             current,
             relationships=(
                 relation(RelationshipKind.BLOCKED_BY, missing),
@@ -119,7 +233,7 @@ class RelationshipIconTests(unittest.TestCase):
 
     def test_missing_parent_and_child_are_selectable_unknown_nodes(self):
         current, parent, child = issue(1), issue(2), issue(3)
-        detail = TaskDetail(
+        detail = fixture_detail(
             current,
             relationships=(
                 relation(RelationshipKind.PARENT, parent),
@@ -134,7 +248,7 @@ class RelationshipIconTests(unittest.TestCase):
 
     def test_cached_summaries_details_and_current_issue_are_reused(self):
         current, blocker, related = issue(1), issue(2, completed=True), issue(3)
-        detail = TaskDetail(
+        detail = fixture_detail(
             current,
             relationships=(
                 relation(RelationshipKind.BLOCKED_BY, blocker),
@@ -145,23 +259,23 @@ class RelationshipIconTests(unittest.TestCase):
         backend = Backend([detail])
         controller = TasksController(backend)
         controller.cached_items[blocker.identity.stable_id] = blocker
-        controller.detail_cache[related.identity.stable_id] = TaskDetail(related)
+        controller.detail_cache[related.identity.stable_id] = fixture_detail(related)
         tree = build_relationship_hierarchy(controller, detail)
         self.assertEqual([node.completion_icon for node in tree.children], ["✓", "○", "○"])
         self.assertEqual(backend.calls, [])
 
     def test_refresh_replaces_cached_completion_once_per_identity(self):
         current, blocker = issue(1), issue(2)
-        detail = TaskDetail(
+        detail = fixture_detail(
             current,
             relationships=(
                 relation(RelationshipKind.BLOCKED_BY, blocker),
                 relation(RelationshipKind.MENTIONED, blocker),
             ),
         )
-        backend = Backend([detail, TaskDetail(replace(blocker, completed=True))])
+        backend = Backend([detail, fixture_detail(replace(blocker, completed=True))])
         controller = TasksController(backend)
-        controller.detail_cache[blocker.identity.stable_id] = TaskDetail(blocker)
+        controller.detail_cache[blocker.identity.stable_id] = fixture_detail(blocker)
         controller.cached_items[blocker.identity.stable_id] = blocker
         self.assertEqual(
             build_relationship_hierarchy(controller, detail).children[0].completion_icon, "○"
@@ -173,7 +287,7 @@ class RelationshipIconTests(unittest.TestCase):
     def test_additional_lookup_cap_preserves_all_targets_and_no_recursive_expansion(self):
         current = issue(1)
         targets = [issue(i, completed=True) for i in range(2, 84)]
-        detail = TaskDetail(
+        detail = fixture_detail(
             current,
             relationships=tuple(relation(RelationshipKind.MENTIONED, target) for target in targets),
         )
@@ -181,7 +295,7 @@ class RelationshipIconTests(unittest.TestCase):
             [
                 detail,
                 *(
-                    TaskDetail(
+                    fixture_detail(
                         target, relationships=(relation(RelationshipKind.CHILD, issue(999)),)
                     )
                     for target in targets
@@ -196,10 +310,10 @@ class RelationshipIconTests(unittest.TestCase):
 
     def test_rendered_icons_navigation_and_refresh(self):
         current, blocker = issue(1), issue(2)
-        detail = TaskDetail(
+        detail = fixture_detail(
             current, relationships=(relation(RelationshipKind.BLOCKED_BY, blocker),)
         )
-        backend = Backend([detail, TaskDetail(blocker)])
+        backend = Backend([detail, fixture_detail(blocker)])
         app = TasksApp(
             TasksController(backend), PullsController(None), initial_identity=current.identity
         )
@@ -210,8 +324,9 @@ class RelationshipIconTests(unittest.TestCase):
                 screen = app.screen
                 tree = screen.query_one("#relations-tree", Tree)
                 linked = tree.root.children[0].children[0]
+                self.assertTrue(str(tree.root.children[0].label).startswith("x "))
                 self.assertTrue(str(linked.label).startswith("○ blocked by:"))
-                backend.details[blocker.identity.stable_id] = TaskDetail(
+                backend.details[blocker.identity.stable_id] = fixture_detail(
                     replace(blocker, completed=True)
                 )
                 await pilot.press("r")
@@ -219,6 +334,7 @@ class RelationshipIconTests(unittest.TestCase):
                 self.assertTrue(
                     str(tree.root.children[0].children[0].label).startswith("✓ blocked by:")
                 )
+                self.assertTrue(str(tree.root.children[0].label).startswith("○ "))
                 # The completed relationship remains navigable.
                 tree.select_node(tree.root.children[0].children[0])
                 await pilot.pause()

@@ -96,7 +96,7 @@ class JiraQueryTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--limit") + 1], "25")
         self.assertEqual(
             argv[argv.index("--fields") + 1],
-            "key,issuetype,summary,status,assignee,priority,labels,components,parent,issuelinks,updated",
+            "key,issuetype,summary,status,assignee,priority,labels,components,parent,issuelinks,subtasks,updated",
         )
 
     @patch("tasks.jira.run_json", return_value=[])

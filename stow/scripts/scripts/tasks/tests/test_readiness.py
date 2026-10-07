@@ -6,7 +6,7 @@ from dataclasses import replace
 
 from tasks.filters import WorkFilter
 from tasks.models import BackendIdentity, TaskDetail, TaskSummary
-from tasks.readiness import WorkState, evaluate, is_done
+from tasks.readiness import WORK_ICONS, WorkState, evaluate, is_done, work_icon
 from tasks.tui import TasksController, selected_task, set_filter, visible_tasks
 from tasks.tui.logic import work_result
 
@@ -54,6 +54,151 @@ class ReadinessTests(unittest.TestCase):
             {item.identity.stable_id: item for item in tasks},
             tasks if candidates is None else candidates,
         )
+
+    def test_feature_rollup_and_filter_independence_both_backends(self):
+        for jira in (False, True):
+
+            def make(number, jira=jira, **kwargs):
+                value = task(number, **kwargs)
+                return (
+                    replace(value, identity=BackendIdentity.jira(f"PROJ-{number}"))
+                    if jira
+                    else value
+                )
+
+            with self.subTest(jira=jira):
+                blocker = make(99)
+                ready = make(1, status="In Progress")
+                blocked = [make(i, blocked_by=(blocker.identity,)) for i in (2, 3)]
+                feature = make(15, children=tuple(item.identity for item in [ready, *blocked]))
+                feature_blocked_children = [make(i, blocked_by=(blocker.identity,)) for i in (4, 5)]
+                blocked_feature = make(
+                    16, children=tuple(item.identity for item in feature_blocked_children)
+                )
+                items = [
+                    feature,
+                    blocked_feature,
+                    ready,
+                    *blocked,
+                    *feature_blocked_children,
+                    blocker,
+                ]
+                result = self.result(items)
+                self.assertEqual(result.states[feature.identity.stable_id], WorkState.READY)
+                self.assertEqual(
+                    result.states[blocked_feature.identity.stable_id], WorkState.BLOCKED
+                )
+                self.assertEqual(result.ready_descendants[feature.identity.stable_id], 1)
+                filtered = self.result(items, [blocked[0]])
+                self.assertEqual(filtered.states, result.states)
+                self.assertEqual(filtered.ready_descendants[feature.identity.stable_id], 0)
+                self.assertEqual(filtered.selected("available"), [])
+
+    def test_child_inventory_unknown_done_and_proven_ready_rules(self):
+        ready = task(1)
+        blocker = task(2)
+        blocked = task(3, blocked_by=(blocker.identity,))
+        done = task(4, completed=True)
+        unknown = task(5, dependencies_complete=False)
+        cases = [
+            (task(10, children_complete=False), WorkState.UNKNOWN),
+            (task(10, children=(task(999).identity,)), WorkState.UNKNOWN),
+            (task(10, children=(done.identity,)), WorkState.READY),
+            (task(10, children=(blocked.identity,), children_complete=False), WorkState.UNKNOWN),
+            (task(10, children=(blocked.identity,)), WorkState.BLOCKED),
+            (task(10, children=(ready.identity,), children_complete=False), WorkState.READY),
+            (task(10, children=(unknown.identity,)), WorkState.UNKNOWN),
+            (task(10, children=(ready.identity,), dependencies_complete=False), WorkState.UNKNOWN),
+            (task(10, children=(task(999).identity,), completed=True), WorkState.DONE),
+            (
+                task(10, children=(ready.identity,), blocked_by=(blocker.identity,)),
+                WorkState.BLOCKED,
+            ),
+        ]
+        for parent, expected in cases:
+            with self.subTest(parent=parent):
+                result = self.result([parent, ready, blocker, blocked, done, unknown])
+                self.assertEqual(result.states[parent.identity.stable_id], expected)
+
+    def test_parent_link_inventory_nested_rollup_and_inherited_blockers(self):
+        blocker = task(99)
+        parent = task(15)
+        feature = task(16, parent=parent.identity)
+        ready = task(1, parent=parent.identity)
+        blocked = task(2, parent=feature.identity, blocked_by=(blocker.identity,))
+        result = self.result([parent, feature, ready, blocked, blocker])
+        self.assertEqual(result.states[parent.identity.stable_id], WorkState.READY)
+        self.assertEqual(result.states[feature.identity.stable_id], WorkState.BLOCKED)
+        self.assertEqual(result.states[ready.identity.stable_id], WorkState.READY)
+        result = self.result(
+            [replace(parent, blocked_by=(blocker.identity,)), feature, ready, blocked, blocker]
+        )
+        self.assertTrue(
+            all(
+                result.states[item.identity.stable_id] is WorkState.BLOCKED
+                for item in [parent, feature, ready, blocked]
+            )
+        )
+
+    def test_child_cycles_stay_unknown_even_with_ready_exit_but_blocker_dominates(self):
+        ready, blocker = task(3), task(99)
+        first = task(1, children=(task(2).identity, ready.identity))
+        second = task(2, children=(first.identity,))
+        result = self.result([first, second, ready, blocker])
+        self.assertEqual(result.states[first.identity.stable_id], WorkState.UNKNOWN)
+        self.assertEqual(result.states[second.identity.stable_id], WorkState.UNKNOWN)
+        result = self.result(
+            [replace(first, blocked_by=(blocker.identity,)), second, ready, blocker]
+        )
+        self.assertEqual(result.states[first.identity.stable_id], WorkState.BLOCKED)
+        result = self.result([first, replace(second, completed=True, children=()), ready])
+        self.assertEqual(result.states[first.identity.stable_id], WorkState.READY)
+
+    def test_explicit_children_infer_ancestry_but_native_parent_overrides_stale_edge(self):
+        blocker = task(99)
+        child = task(1)
+        parent = task(15, children=(child.identity,), blocked_by=(blocker.identity,))
+        result = self.result([parent, child, blocker])
+        self.assertEqual(result.states[child.identity.stable_id], WorkState.BLOCKED)
+        actual_parent = task(16)
+        moved_child = replace(child, parent=actual_parent.identity)
+        result = self.result([parent, actual_parent, moved_child, blocker])
+        self.assertEqual(result.states[moved_child.identity.stable_id], WorkState.READY)
+        self.assertEqual(result.ready_descendants[parent.identity.stable_id], 0)
+        self.assertEqual(result.ready_descendants[actual_parent.identity.stable_id], 1)
+
+    def test_parent_identity_url_does_not_change_explicit_child_membership(self):
+        parent = replace(
+            task(15), identity=replace(task(15).identity, url="https://example.test/15")
+        )
+        child = task(1, parent=task(15).identity, blocked_by=(task(99).identity,))
+        parent = replace(parent, children=(child.identity,))
+        result = self.result([parent, child, task(99)])
+        self.assertEqual(result.states[parent.identity.stable_id], WorkState.BLOCKED)
+        self.assertEqual(result.states[child.identity.stable_id], WorkState.BLOCKED)
+
+    def test_conflicting_inferred_parents_are_unknown_unless_blocking_is_proven(self):
+        child = task(1)
+        parents = [task(number, children=(child.identity,)) for number in (15, 16)]
+        result = self.result([*parents, child])
+        self.assertEqual(result.states[child.identity.stable_id], WorkState.UNKNOWN)
+        blocker = task(99)
+        result = self.result(
+            [replace(parents[0], blocked_by=(blocker.identity,)), parents[1], child, blocker]
+        )
+        self.assertEqual(result.states[child.identity.stable_id], WorkState.BLOCKED)
+
+    def test_work_icons_are_shared_for_all_states(self):
+        self.assertEqual(
+            WORK_ICONS,
+            {
+                WorkState.DONE: "✓",
+                WorkState.READY: "○",
+                WorkState.BLOCKED: "x",
+                WorkState.UNKNOWN: "?",
+            },
+        )
+        self.assertEqual([work_icon(state) for state in WorkState], ["○", "x", "✓", "?"])
 
     def test_completion_and_direct_blockers(self):
         closed = task(1, status="Released", completed=True)

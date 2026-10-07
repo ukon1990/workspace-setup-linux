@@ -19,7 +19,7 @@ from .cache import (
 from .models import Comment, RelationshipKind, TaskDetail, TaskRelationship, TaskSummary
 
 DETAIL_LIMIT = 200
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 
 def version_order(first, second):

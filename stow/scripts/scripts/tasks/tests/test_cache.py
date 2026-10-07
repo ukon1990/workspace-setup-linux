@@ -86,11 +86,13 @@ class CacheRoundTripTests(unittest.TestCase):
             save_entry(scope, entry, cache_dir=cache_dir)
             path = cache_dir / "github-acme-app.yaml"
             raw = path.read_text(encoding="utf-8")
-            path.write_text(raw.replace("format: 4", "format: 2"), encoding="utf-8")
+            path.write_text(raw.replace("format: 5", "format: 4"), encoding="utf-8")
             self.assertIsNone(load_entry(scope, None, AssigneeFilter.ALL, cache_dir=cache_dir))
 
     def test_format_since_helpers(self):
-        self.assertEqual(format_github_since("2026-09-21T18:30:00+00:00"), "2026-09-21T18:30:00+00:00")
+        self.assertEqual(
+            format_github_since("2026-09-21T18:30:00+00:00"), "2026-09-21T18:30:00+00:00"
+        )
         self.assertEqual(format_jira_since("2026-09-21T18:30:00+00:00"), "2026-09-21 18:30")
 
 
@@ -103,7 +105,9 @@ class IncrementalControllerTests(unittest.TestCase):
             def __init__(self):
                 self.calls = []
 
-            def list_tasks(self, query=None, refresh=False, assignee_filter=AssigneeFilter.ALL, **kwargs):
+            def list_tasks(
+                self, query=None, refresh=False, assignee_filter=AssigneeFilter.ALL, **kwargs
+            ):
                 self.calls.append((query, refresh, assignee_filter, kwargs))
                 if kwargs.get("updated_since"):
                     return (_summary(1, "Updated", status="Closed"),)
@@ -139,7 +143,9 @@ class IncrementalControllerTests(unittest.TestCase):
             scope_label = "acme/app"
             limit = 100
 
-            def list_tasks(self, query=None, refresh=False, assignee_filter=AssigneeFilter.ALL, **kwargs):
+            def list_tasks(
+                self, query=None, refresh=False, assignee_filter=AssigneeFilter.ALL, **kwargs
+            ):
                 return (_summary(1, "Seed"),)
 
             def get_task(self, identity, refresh=False):
@@ -167,7 +173,9 @@ class IncrementalControllerTests(unittest.TestCase):
             scope_label = "acme/app"
             limit = 100
 
-            def list_tasks(self, query=None, refresh=False, assignee_filter=AssigneeFilter.ALL, **kwargs):
+            def list_tasks(
+                self, query=None, refresh=False, assignee_filter=AssigneeFilter.ALL, **kwargs
+            ):
                 if assignee_filter is AssigneeFilter.ME:
                     return (_summary(1, "Mine"),)
                 if assignee_filter is AssigneeFilter.UNASSIGNED:
@@ -187,11 +195,14 @@ class IncrementalControllerTests(unittest.TestCase):
             )
             state = controller.make_list_state()
             controller.load_list(state, full=True, on_progress=events.append)
-            self.assertEqual([event.label for event in events], [
-                "Fetching @me",
-                "Fetching unassigned",
-                "Saving cache",
-            ])
+            self.assertEqual(
+                [event.label for event in events],
+                [
+                    "Fetching @me",
+                    "Fetching unassigned",
+                    "Saving cache",
+                ],
+            )
             self.assertEqual([event.done for event in events], [0, 1, 2])
             self.assertEqual(events[0].total, 3)
             self.assertEqual({task.identity.key for task in state.tasks}, {"1", "2"})
@@ -296,9 +307,7 @@ class PullCacheTests(unittest.TestCase):
             save_entry(scope, task_entry, cache_dir=cache_dir)
             again = load_pull_entry(scope, None, AssigneeFilter.ALL, cache_dir=cache_dir)
             self.assertEqual(again.items["github-pr:acme/app:1"].title, "Alpha")
-            self.assertIsNotNone(
-                load_entry(scope, None, AssigneeFilter.ALL, cache_dir=cache_dir)
-            )
+            self.assertIsNotNone(load_entry(scope, None, AssigneeFilter.ALL, cache_dir=cache_dir))
 
             class RecordingBackend:
                 def __init__(self):

@@ -19,7 +19,7 @@ from .logic import ASSIGNEE_FILTER_OPTIONS, assignee_filter_for_key
 HELP_MARKDOWN = """\
 # Tasks help
 
-Issue-detail relationship icons: `✓` completed · `○` unfinished · `?` unknown.
+Work icons: `✓` completed · `○` ready · `x` blocked · `?` unknown.
 Press `r` to sync changed issues and refresh linked statuses.
 
 | Key | Action |
@@ -57,8 +57,12 @@ Press `r` to sync changed issues and refresh linked statuses.
 `w` chooses All, Available, or Ready only. Available keeps ready issues and
 unfinished ancestors containing ready descendants; Ready only keeps ready
 issues. Completed issues are hidden in both work modes. A ready issue has no
-unfinished blockers on itself or any ancestor. Unknown dependency information
-does not qualify as ready.
+unfinished blockers on itself or any ancestor. A feature with any ready child
+is ready; if all unfinished children are blocked, it is blocked. Completed
+children are ignored. Unresolved dependencies stay unknown unless a known
+blocker proves blocking. Incomplete child data is unknown unless a known ready
+child proves available work. Status uses the full known hierarchy; filters only
+affect visible work and descendant counts.
 
 Work and Ready descendants columns are sortable. Tree labels show the same
 information. Descendant counts cover matching loaded issues; the status bar

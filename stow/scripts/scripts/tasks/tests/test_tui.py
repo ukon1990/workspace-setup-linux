@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
 from tasks.filters import AssigneeFilter
@@ -104,12 +105,8 @@ class FakeJiraBackend:
 
     def __init__(self):
         identity = BackendIdentity.jira("FORSC-8207")
-        self.tasks = [
-            TaskSummary(identity, "Goto target", "In Progress", task_type="Task")
-        ]
-        self.details = {
-            identity.stable_id: TaskDetail(self.tasks[0], description="body")
-        }
+        self.tasks = [TaskSummary(identity, "Goto target", "In Progress", task_type="Task")]
+        self.details = {identity.stable_id: TaskDetail(self.tasks[0], description="body")}
 
     def list_tasks(self, query=None, refresh=False, assignee_filter=AssigneeFilter.ALL, **_kwargs):
         return self.tasks
@@ -142,9 +139,7 @@ class HelperTests(unittest.TestCase):
             "jira:FORSC-8207",
         )
         self.assertEqual(
-            resolve_goto_identity(
-                jira, "https://jira.example/browse/FORSC-8207"
-            ).stable_id,
+            resolve_goto_identity(jira, "https://jira.example/browse/FORSC-8207").stable_id,
             "jira:FORSC-8207",
         )
         self.assertIsNone(resolve_goto_identity(jira, "42"))
@@ -277,21 +272,15 @@ class HelperTests(unittest.TestCase):
                 self.assertFalse(is_done_status(status))
 
     def test_progress_rollup_is_leaf_weighted(self):
-        open_leaf = HierarchyNode(
-            BackendIdentity.github(1, "owner/repo"), "Open", "Open"
-        )
-        done_leaf = HierarchyNode(
-            BackendIdentity.github(2, "owner/repo"), "Done", "Closed"
-        )
+        open_leaf = HierarchyNode(BackendIdentity.github(1, "owner/repo"), "Open", "Open")
+        done_leaf = HierarchyNode(BackendIdentity.github(2, "owner/repo"), "Done", "Closed")
         half = HierarchyNode(
             BackendIdentity.github(3, "owner/repo"),
             "Half",
             "Open",
             children=[open_leaf, done_leaf],
         )
-        full = HierarchyNode(
-            BackendIdentity.github(4, "owner/repo"), "Full", "Closed"
-        )
+        full = HierarchyNode(BackendIdentity.github(4, "owner/repo"), "Full", "Closed")
         root = HierarchyNode(
             BackendIdentity.github(5, "owner/repo"),
             "Root",
@@ -312,17 +301,13 @@ class HelperTests(unittest.TestCase):
             parent.identity.stable_id: TaskDetail(
                 parent,
                 relationships=(
-                    TaskRelationship(
-                        RelationshipKind.CHILD, child.identity, "sub-issue", "Child"
-                    ),
+                    TaskRelationship(RelationshipKind.CHILD, child.identity, "sub-issue", "Child"),
                 ),
             ),
             child.identity.stable_id: TaskDetail(
                 child,
                 relationships=(
-                    TaskRelationship(
-                        RelationshipKind.PARENT, parent.identity, "parent", "Parent"
-                    ),
+                    TaskRelationship(RelationshipKind.PARENT, parent.identity, "parent", "Parent"),
                     TaskRelationship(
                         RelationshipKind.CHILD,
                         grandchild.identity,
@@ -334,9 +319,7 @@ class HelperTests(unittest.TestCase):
             grandchild.identity.stable_id: TaskDetail(
                 grandchild,
                 relationships=(
-                    TaskRelationship(
-                        RelationshipKind.PARENT, child.identity, "parent", "Child"
-                    ),
+                    TaskRelationship(RelationshipKind.PARENT, child.identity, "parent", "Child"),
                     # Cycle back to parent should be ignored once parent_of is set.
                     TaskRelationship(
                         RelationshipKind.CHILD, parent.identity, "sub-issue", "Parent"
@@ -357,35 +340,30 @@ class HelperTests(unittest.TestCase):
         current = summary(21, "Current", status="Open")
         child = summary(22, "Child", status="Closed")
         blocked = BackendIdentity.github(23, "owner/repo")
+        parent = replace(parent, children=(current.identity,))
+        current = replace(
+            current, parent=parent.identity, children=(child.identity,), blocked_by=(blocked,)
+        )
+        child = replace(child, parent=current.identity)
         details = {
             parent.identity.stable_id: TaskDetail(
                 parent,
                 relationships=(
-                    TaskRelationship(
-                        RelationshipKind.CHILD, current.identity, "sub-issue"
-                    ),
+                    TaskRelationship(RelationshipKind.CHILD, current.identity, "sub-issue"),
                 ),
             ),
             current.identity.stable_id: TaskDetail(
                 current,
                 relationships=(
-                    TaskRelationship(
-                        RelationshipKind.PARENT, parent.identity, "parent"
-                    ),
-                    TaskRelationship(
-                        RelationshipKind.CHILD, child.identity, "sub-issue"
-                    ),
-                    TaskRelationship(
-                        RelationshipKind.BLOCKED_BY, blocked, "blocked by", "Blocker"
-                    ),
+                    TaskRelationship(RelationshipKind.PARENT, parent.identity, "parent"),
+                    TaskRelationship(RelationshipKind.CHILD, child.identity, "sub-issue"),
+                    TaskRelationship(RelationshipKind.BLOCKED_BY, blocked, "blocked by", "Blocker"),
                 ),
             ),
             child.identity.stable_id: TaskDetail(
                 child,
                 relationships=(
-                    TaskRelationship(
-                        RelationshipKind.PARENT, current.identity, "parent"
-                    ),
+                    TaskRelationship(RelationshipKind.PARENT, current.identity, "parent"),
                 ),
             ),
         }
@@ -407,9 +385,7 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(forest[0].identity.key, "20")
         self.assertEqual(forest[0].children[0].identity.key, "21")
 
-        hierarchy = build_relationship_hierarchy(
-            controller, details[current.identity.stable_id]
-        )
+        hierarchy = build_relationship_hierarchy(controller, details[current.identity.stable_id])
         self.assertEqual(hierarchy.identity.key, "20")
         current_node = hierarchy.children[0]
         self.assertTrue(current_node.is_current)
@@ -718,9 +694,7 @@ class AppSmokeTests(unittest.TestCase):
         from tasks.tui.screens import ListScreen
 
         backend = FakeBackend()
-        controller = TasksController(
-            backend, initial_assignee_filter=AssigneeFilter.ME
-        )
+        controller = TasksController(backend, initial_assignee_filter=AssigneeFilter.ME)
         state = controller.make_list_state(tasks=backend.tasks)
         self.assertEqual(state.assignee_filter, AssigneeFilter.ME)
         screen = ListScreen(controller, state, PullsController(None), load_on_mount=False)

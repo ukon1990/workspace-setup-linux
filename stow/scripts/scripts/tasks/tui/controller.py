@@ -14,6 +14,7 @@ from ..cache import (
 )
 from ..filters import AssigneeFilter, WorkFilter
 from ..models import BackendIdentity, TaskDetail, TaskSummary
+from .hierarchy_sync import HierarchySync
 from .logic import (
     ListState,
     PhaseRunner,
@@ -28,7 +29,7 @@ from .sync import PersistentIssues
 from .work import WorkController
 
 
-class TasksController(PersistentIssues, WorkController):
+class TasksController(PersistentIssues, HierarchySync, WorkController):
     """Backend session + list/detail loading shared by screens and tests."""
 
     def __init__(

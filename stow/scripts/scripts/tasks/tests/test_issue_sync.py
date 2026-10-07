@@ -423,7 +423,7 @@ class IssueStoreTests(unittest.TestCase):
             save_store(scope, loaded, directory)
             self.assertNotIn(key, load_store(scope, directory).details)
             path = store_path(scope, directory)
-            path.write_text(path.read_text().replace("format: 1", "format: 0"))
+            path.write_text(path.read_text().replace("format: 2", "format: 1"))
             self.assertEqual(load_store(scope, directory), IssueStore())
 
     def test_corrupt_store_is_reported(self):

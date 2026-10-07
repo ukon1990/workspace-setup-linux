@@ -245,8 +245,14 @@ Press `w` to choose which work to show in either table or tree view:
 - **Ready only** shows a compact list of ready issues; tree nodes attach to the nearest retained ancestor or become roots.
 
 An unfinished issue (including in-progress work) is ready when it and its
-ancestors have no unfinished explicit blockers. Completed blockers are ignored.
-Unresolved dependency information is **Unknown** and does not count as ready.
+ancestors have no unfinished explicit blockers and it has work available.
+Completed blockers are ignored. A feature with at least one ready unfinished
+child is ready; a feature whose unfinished children are all blocked is blocked.
+Leaves with a complete child inventory are ready when their dependencies allow
+work. Completed children do not prevent work. Unresolved dependencies stay
+**Unknown** unless a known unfinished blocker proves blocking. Incomplete child
+data is **Unknown** unless a known ready child proves available work. Readiness considers the full known hierarchy; assignee and search filters
+change which issues are shown and counted.
 The **Work** and **Ready descendants** table columns are sortable; tree labels
 show the same information. Descendant counts exclude the parent and respect
 assignee, backend search, and local text filters. Counts cover loaded matching
@@ -262,10 +268,13 @@ to fetch changed issues and update blocker statuses; `R` resets the selected
 project or repository cache and loads it again.
 Work filters apply only to issues; pull-request browsing is unchanged.
 
-In issue details, every relationship-tree issue has a completion icon: `✓`
-completed, `○` unfinished (including in progress), or `?` unknown. Completed
-links remain visible. Press `r` to sync changed issues and refresh linked statuses; unavailable targets
-or links beyond the 80 additional-lookup limit show `?`.
+The Work column and overview tree labels use the same states as detail
+relationship icons: `✓` completed, `○` ready, `x` blocked, and `?` unknown. A feature with ready and
+blocked children stays ready, while an entirely blocked feature shows `x`.
+Blockers on ancestors apply to descendants; one blocked sibling does not block
+its ready siblings. Completed links remain visible. Press `r` to sync changed
+issues and refresh linked statuses; unavailable targets or unresolved links
+beyond the 80 additional-lookup limit show `?`.
 
 Issue lists and loaded descriptions, comments, parents, and dependencies are
 persisted per Jira project or GitHub repository under
