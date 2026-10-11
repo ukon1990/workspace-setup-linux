@@ -1,5 +1,6 @@
 """Reconcile cached child inventories without refetching unchanged parents."""
 
+from contextlib import contextmanager
 from dataclasses import replace
 
 from ..issue_cache import version_order
@@ -7,6 +8,18 @@ from ..models import RelationshipKind, TaskRelationship
 
 
 class HierarchySync:
+    @contextmanager
+    def batch_hierarchy(self):
+        """Persist affected parent scopes once after reconciling a batch."""
+        self._hierarchy_scopes = set()
+        try:
+            yield
+        finally:
+            scopes = self._hierarchy_scopes
+            self._hierarchy_scopes = None
+            for scope in scopes:
+                self._save_issue_store(scope)
+
     def remember_hierarchy_summary(self, task):
         key = task.identity.stable_id
         old = self.cached_items.get(key)
@@ -45,12 +58,18 @@ class HierarchySync:
             }
             if task.parent is not None and parent_key == task.parent.stable_id:
                 children[key] = task.identity
+            if set(children) == {child.stable_id for child in parent.children}:
+                continue
             updated = replace(parent, children=tuple(children.values()))
             self.cached_items[parent_key] = updated
             if self.persistent_sync:
                 scope = self.scope_for_identity(parent.identity)
                 self._issue_store(scope).items[parent_key] = updated
-                self._save_issue_store(scope)
+                scopes = getattr(self, "_hierarchy_scopes", None)
+                if scopes is None:
+                    self._save_issue_store(scope)
+                else:
+                    scopes.add(scope)
 
     def hierarchy_detail(self, detail):
         summary = self.cached_items.get(detail.identity.stable_id, detail.summary)

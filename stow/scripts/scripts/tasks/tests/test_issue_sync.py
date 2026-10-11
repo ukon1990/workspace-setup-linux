@@ -84,6 +84,57 @@ class IssueSyncTests(unittest.TestCase):
         self.assertIsNone(state.error)
         return state
 
+    def test_unchanged_parent_links_do_not_rewrite_store(self):
+        children = [issue(number) for number in range(2, 102)]
+        parent = issue(1, children=tuple(child.identity for child in children))
+        children = [replace(child, parent=parent.identity) for child in children]
+        controller = self.controller(Backend([], []))
+        controller.cached_items = {
+            task.identity.stable_id: task for task in [parent, *children]
+        }
+        with patch.object(controller, "_save_issue_store") as save:
+            for child in children:
+                controller.reconcile_hierarchy(child)
+        save.assert_not_called()
+        self.assertEqual(controller.cached_items[parent.identity.stable_id], parent)
+
+    def test_changed_parent_links_are_saved_once_per_batch(self):
+        parent = issue(1)
+        children = [issue(number, parent=parent.identity) for number in range(2, 102)]
+        controller = self.controller(Backend([], []))
+        controller.cached_items = {parent.identity.stable_id: parent}
+        with patch.object(controller, "_save_issue_store") as save:
+            with controller.batch_hierarchy():
+                for child in children:
+                    controller.reconcile_hierarchy(child)
+                save.assert_not_called()
+        save.assert_called_once_with("github:acme/app")
+        self.assertEqual(
+            controller.cached_items[parent.identity.stable_id].children,
+            tuple(child.identity for child in children),
+        )
+
+    def test_cache_write_and_supporting_scope_checks_have_progress(self):
+        task = issue(1, children_complete=True)
+        controller = self.controller(Backend([task], [TaskDetail(task)]))
+        events = []
+        from tasks.tui.sync import save_entry as write_entry
+
+        def write(*args, **kwargs):
+            self.assertEqual(events[-1].stage, "Save issues")
+            self.assertFalse(events[-1].completed)
+            return write_entry(*args, **kwargs)
+
+        with patch("tasks.tui.sync.save_entry", side_effect=write):
+            state = controller.make_list_state()
+            controller.load_list(state, on_progress=events.append)
+        self.assertIsNone(state.error)
+        for stage in ("Save issues", "Check supporting scopes"):
+            self.assertEqual(
+                [event.completed for event in events if event.stage == stage],
+                [False, True],
+            )
+
     def test_restart_reuses_details_and_support_without_filtered_membership_leak(self):
         blocker = issue(2)
         dependent = issue(1, blocked_by=(blocker.identity,))

@@ -24,6 +24,7 @@ class WorkController:
         )
         result = resolver.run()
         self.last_readiness_loads = resolver.loads
+        self.last_readiness_checks = resolver.completed_checks
         self.last_readiness_failures = resolver.failed
         return result
 

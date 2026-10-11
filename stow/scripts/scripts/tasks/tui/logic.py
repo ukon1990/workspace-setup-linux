@@ -31,6 +31,11 @@ class SyncProgress:
     total: int
     label: str
     eta_seconds: Optional[float] = None
+    stage: Optional[str] = None
+    operation: Optional[str] = None
+    completed: bool = False
+    issue_count: Optional[int] = None
+    completed_checks: Optional[int] = None
 
 
 def eta_from_durations(
@@ -74,9 +79,10 @@ class PhaseRunner:
         result = action()
         self.durations.append(time.monotonic() - started)
         self.done += 1
+        self._emit(label, completed=True, issue_count=len(result) if isinstance(result, (list, tuple)) else None)
         return result
 
-    def _emit(self, label: str) -> None:
+    def _emit(self, label: str, *, completed=False, issue_count=None) -> None:
         if self.on_progress is None:
             return
         remaining = max(self.total - self.done, 0)
@@ -85,6 +91,10 @@ class PhaseRunner:
                 done=self.done,
                 total=self.total,
                 label=label,
+                stage=label.replace("Fetching", "Fetch", 1) if label.startswith("Fetching") else label,
+                operation=label,
+                completed=completed,
+                issue_count=issue_count,
                 eta_seconds=eta_from_durations(self.durations, remaining),
             )
         )

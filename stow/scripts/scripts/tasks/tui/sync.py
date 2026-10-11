@@ -71,7 +71,7 @@ class PersistentIssues:
         self._hydrate(store)
         started_at = utc_now_iso()
         if on_progress:
-            on_progress(SyncProgress(0, 0, f"Checking updates · {scope}"))
+            on_progress(SyncProgress(0, 0, f"Checking updates · {scope}", stage="Check updates", operation=scope))
         if full:
             self.rebuild_backups[scope] = store
             for key in store.items:
@@ -81,30 +81,33 @@ class PersistentIssues:
             self.issue_stores[scope] = store
         previous = store.synced_at
         if previous is None:
+            if on_progress:
+                on_progress(SyncProgress(0, 0, "No saved checkpoint", stage="Check updates", completed=True))
             store.synced_at = started_at
             self._hydrate(store)
             return
         try:
             batch = self.backend.list_updates(scope, previous)
             changed = False
-            for task in batch.items:
-                key = task.identity.stable_id
-                old = store.items.get(key)
-                order = version_order(task.updated_at, old.updated_at) if old is not None else None
-                if old is not None and (
-                    (order == 0 and (task.updated_at is not None or old == task))
-                    or order == -1
-                    or (task.updated_at is None and old.updated_at is not None)
-                ):
-                    continue
-                store.items[key] = task
-                self.cached_items[key] = task
-                self.reconcile_hierarchy(task, old)
-                store.details.pop(key, None)
-                self.detail_cache.pop(key, None)
-                if old is not None or self._after(task.updated_at, previous):
-                    self.changed_ids.add(key)
-                changed = True
+            with self.batch_hierarchy():
+                for task in batch.items:
+                    key = task.identity.stable_id
+                    old = store.items.get(key)
+                    order = version_order(task.updated_at, old.updated_at) if old is not None else None
+                    if old is not None and (
+                        (order == 0 and (task.updated_at is not None or old == task))
+                        or order == -1
+                        or (task.updated_at is None and old.updated_at is not None)
+                    ):
+                        continue
+                    store.items[key] = task
+                    self.cached_items[key] = task
+                    self.reconcile_hierarchy(task, old)
+                    store.details.pop(key, None)
+                    self.detail_cache.pop(key, None)
+                    if old is not None or self._after(task.updated_at, previous):
+                        self.changed_ids.add(key)
+                    changed = True
             if changed:
                 store.revision += 1
             if batch.complete:
@@ -118,6 +121,9 @@ class PersistentIssues:
             self._warn(scope, f"Update check failed for {scope}: {error}; using saved data")
             self._hydrate(store)
 
+        if on_progress:
+            on_progress(SyncProgress(0, 0, "Update check finished", stage="Check updates", completed=True))
+
     @staticmethod
     def _after(timestamp, baseline):
         if timestamp is None:
@@ -130,8 +136,10 @@ class PersistentIssues:
             return False
 
     def load_persistent_list(self, state, *, refresh=False, full=False, on_progress=None):
-        from .logic import PhaseRunner, presentation_tasks
+        from .logic import PhaseRunner, SyncProgress, presentation_tasks
 
+        if on_progress:
+            on_progress(SyncProgress(0, 0, "Load saved issues", stage="Load saved issues"))
         try:
             entry = load_entry(
                 self.cache_scope, state.query, state.assignee_filter, cache_dir=self.cache_dir
@@ -139,6 +147,8 @@ class PersistentIssues:
         except CacheError as error:
             self._warn(self.cache_scope, str(error))
             entry = None
+        if on_progress:
+            on_progress(SyncProgress(0, 0, "Load saved issues", stage="Load saved issues", completed=True))
         self.sync_scope(refresh=refresh, full=full, on_progress=on_progress)
         store = self._issue_store(self.cache_scope)
         if entry is None or full or entry.revision != store.revision:
@@ -155,8 +165,11 @@ class PersistentIssues:
                     full=False,
                     backend_refresh=True,
                 )
-                for task in tasks:
-                    self._merge_fetched_summary(store, task)
+                if on_progress:
+                    on_progress(SyncProgress(0, 0, "Save issues", stage="Save issues"))
+                with self.batch_hierarchy():
+                    for task in tasks:
+                        self._merge_fetched_summary(store, task)
                 self.rebuild_backups.pop(self.cache_scope, None)
                 entry = CacheEntry(
                     synced_at=store.synced_at or utc_now_iso(),
@@ -167,6 +180,8 @@ class PersistentIssues:
                 entry.replace_items(tasks)
                 save_entry(self.cache_scope, entry, cache_dir=self.cache_dir)
                 self._save_issue_store(self.cache_scope)
+                if on_progress:
+                    on_progress(SyncProgress(0, 0, "Save issues", stage="Save issues", completed=True))
             except Exception as error:
                 if entry is None:
                     raise
@@ -178,7 +193,11 @@ class PersistentIssues:
         membership = {key: store.items.get(key, task) for key, task in entry.items.items()}
         self.presentation_items = membership
         state.tasks = presentation_tasks(membership, state.query)
+        if on_progress:
+            on_progress(SyncProgress(0, 0, "Check supporting scopes", stage="Check supporting scopes"))
         self.sync_dependencies(state.tasks, refresh=refresh, on_progress=on_progress)
+        if on_progress:
+            on_progress(SyncProgress(0, 0, "Check supporting scopes", stage="Check supporting scopes", completed=True))
         self._synced_at = store.synced_at
 
     def _merge_fetched_summary(self, store, task):

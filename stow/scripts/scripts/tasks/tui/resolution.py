@@ -20,6 +20,7 @@ class ReadinessResolver:
         self.on_progress = on_progress
         self.max_loads = max(0, min(MAX_LOOKUPS, max_loads))
         self.loads = 0
+        self.completed_checks = 0
         self.items = dict(controller.cached_items)
         for seed in seeds:
             self.items.setdefault(seed.identity.stable_id, seed)
@@ -54,7 +55,7 @@ class ReadinessResolver:
         if self.on_progress:
             from .logic import SyncProgress
 
-            self.on_progress(SyncProgress(self.loads, 0, label))
+            self.on_progress(SyncProgress(self.loads, 0, label, stage="Check parents, blockers, and sub-issues", operation=label, completed_checks=self.completed_checks))
 
     def _remember(self, task):
         task = self.controller.remember_hierarchy_summary(task)
@@ -96,8 +97,10 @@ class ReadinessResolver:
             return None
         self.fetched.add(key)
         self.loads += 1
-        self._progress(f"Checking work · {self.loads} lookups · {identity.display_key}")
+        self._progress(f"Fetching {identity.display_key}")
         detail, _error = self.controller.load_detail(identity, refresh=self.refresh)
+        self.completed_checks += 1
+        self._progress(f"Checked {identity.display_key}" if detail else f"Could not check {identity.display_key}")
         if detail is None:
             self.failed.add(key)
             known = self.items.get(key)
@@ -122,7 +125,11 @@ class ReadinessResolver:
         try:
             batch = lookup([task.identity for task in parents])
         except Exception:
+            self.completed_checks += 1
+            self._progress("Could not check children")
             return
+        self.completed_checks += 1
+        self._progress("Checked children")
         children = {task.identity.stable_id: {} for task in parents}
         for child in batch.items:
             if child.parent is None or child.parent.stable_id not in children:
@@ -155,7 +162,7 @@ class ReadinessResolver:
                     continue
                 self.seen.add(token)
                 if self.controller.persistent_sync:
-                    self.controller.sync_scope(self.controller.scope_for_identity(identity))
+                    self.controller.sync_scope(self.controller.scope_for_identity(identity), on_progress=self.on_progress)
                     self._scan_scope(self.controller.scope_for_identity(identity))
                     cached = self.controller.cached_items.get(key)
                     if cached is not None:

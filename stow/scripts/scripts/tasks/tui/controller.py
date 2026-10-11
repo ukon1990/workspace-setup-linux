@@ -71,6 +71,11 @@ class TasksController(PersistentIssues, HierarchySync, WorkController):
         on_progress: Optional[Callable[[SyncProgress], None]] = None,
     ) -> None:
         state.error = None
+
+        def report(stage, completed=False, **fields):
+            if on_progress:
+                on_progress(SyncProgress(0, 0, stage, stage=stage, completed=completed, **fields))
+
         try:
             if self.persistent_sync:
                 self.load_persistent_list(
@@ -94,16 +99,20 @@ class TasksController(PersistentIssues, HierarchySync, WorkController):
                 state.tasks = list(fetched)
                 self.cached_items = {task.identity.stable_id: task for task in state.tasks}
             state.changed_ids = self.changed_ids
+            report("Check parents, blockers, and sub-issues", completed_checks=0)
             self.resolve_work(
                 state,
                 refresh=refresh and not self.persistent_sync,
                 full=full and not self.persistent_sync,
                 on_progress=on_progress,
             )
+            report("Check parents, blockers, and sub-issues", True, completed_checks=self.last_readiness_checks)
+            report("Prepare view")
             from .logic import visible_tasks
 
             count = len(visible_tasks(state))
             state.index = min(max(state.index, 0), max(0, count - 1))
+            report("Prepare view", True)
         except Exception as error:  # Backends expose user-ready errors.
             state.error = str(error) or type(error).__name__
 
@@ -176,12 +185,16 @@ class TasksController(PersistentIssues, HierarchySync, WorkController):
         on_progress: Optional[Callable[[SyncProgress], None]] = None,
     ) -> None:
         assert self.cache_scope is not None
+        if on_progress:
+            on_progress(SyncProgress(0, 0, "Load saved issues", stage="Load saved issues"))
         entry = load_entry(
             self.cache_scope,
             state.query,
             state.assignee_filter,
             cache_dir=self.cache_dir,
         )
+        if on_progress:
+            on_progress(SyncProgress(0, 0, "Load saved issues", stage="Load saved issues", completed=True))
         if entry is not None and not refresh and not full:
             self.cached_items = dict(entry.items)
             self._synced_at = entry.synced_at

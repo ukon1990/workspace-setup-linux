@@ -12,6 +12,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, LoadingIndicator, Static, Tree
 
 from ..filters import AssigneeFilter, WorkFilter
+from .loading import LoadingPanel
 from .list_actions import ListActions
 from .list_rendering import ListRendering
 from .logic import (
@@ -19,7 +20,6 @@ from .logic import (
     ListState,
     SyncProgress,
     TasksController,
-    format_sync_progress,
 )
 from .pulls import (
     PullsController,
@@ -106,7 +106,7 @@ class ListScreen(ListRendering, ListActions, Screen):
         yield Footer()
         with Vertical(id="loading-overlay"):
             yield LoadingIndicator()
-            yield Static("", id="sync-progress")
+            yield LoadingPanel()
 
     def on_mount(self) -> None:
         self.query_one("#loading-overlay").display = False
@@ -144,11 +144,14 @@ class ListScreen(ListRendering, ListActions, Screen):
     def _set_loading(self, active: bool) -> None:
         overlay = self.query_one("#loading-overlay")
         overlay.display = active
-        if not active:
-            self.query_one("#sync-progress", Static).update("")
+        panel = self.query_one(LoadingPanel)
+        if active:
+            panel.start(self.controller.backend.scope_label, self.controller.backend.backend_label)
+        else:
+            panel.stop()
 
     def _set_sync_progress(self, progress: SyncProgress) -> None:
-        self.query_one("#sync-progress", Static).update(format_sync_progress(progress))
+        self.query_one(LoadingPanel).advance(progress)
 
     def _progress_callback(self):
         return lambda progress: self.app.call_from_thread(self._set_sync_progress, progress)

@@ -243,3 +243,11 @@ InputModal, AssigneeFilterModal, AuthorFilterModal, HelpScreen, ReviewCommentsMo
     max-height: 30;
     margin: 1 0;
 }
+
+#issue-loading-progress {
+    width: 90%;
+    max-width: 90;
+    height: auto;
+    margin-top: 1;
+    color: #9aa0a6;
+}

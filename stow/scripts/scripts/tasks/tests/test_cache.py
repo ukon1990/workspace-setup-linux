@@ -160,6 +160,7 @@ class IncrementalControllerTests(unittest.TestCase):
             )
             state = controller.make_list_state()
             controller.load_list(state, full=True, on_progress=events.append)
+            events = [event for event in events if event.total and not event.completed]
             self.assertEqual([event.done for event in events], [0, 1])
             self.assertEqual(events[0].total, 2)
             self.assertEqual(events[-1].done, 1)
@@ -195,6 +196,7 @@ class IncrementalControllerTests(unittest.TestCase):
             )
             state = controller.make_list_state()
             controller.load_list(state, full=True, on_progress=events.append)
+            events = [event for event in events if event.total and not event.completed]
             self.assertEqual(
                 [event.label for event in events],
                 [
