@@ -1,0 +1,27 @@
+/* One typed value (scripts/rofi_menu.py ask): header, input row, hint line. */
+@import "menu.rasi"
+
+mainbox {
+    children: [ message, inputbar, textbox-hints ];
+}
+
+inputbar {
+    background-color: @surface-high;
+    border: 1px;
+    border-color: @primary;
+    border-radius: 8px;
+    padding: 10px 14px;
+    spacing: 10px;
+    children: [ prompt, entry ];
+}
+
+prompt {
+    text-color: @muted;
+    vertical-align: 0.5;
+}
+
+entry {
+    font: "Noto Sans Mono Medium 12";
+    vertical-align: 0.5;
+    cursor: text;
+}

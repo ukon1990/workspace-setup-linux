@@ -1,0 +1,72 @@
+/* Super+Space: apps, open windows and commands in one shell. */
+@import "shared.rasi"
+
+configuration {
+    modes: "drun,window,run";
+    show-icons: true;
+    display-drun: "Apps";
+    display-window: "Open";
+    display-run: "Run";
+    drun-display-format: "{name}  <span size='small' alpha='65%'>{generic}</span>";
+    window-format: "{c}  <span size='small' alpha='65%'>{t}</span>";
+}
+
+window {
+    width: 680px;
+}
+
+mainbox {
+    children: [ inputbar, listview, textbox-hints ];
+}
+
+inputbar {
+    background-color: @surface-high;
+    border-radius: 8px;
+    padding: 8px 8px 8px 14px;
+    spacing: 12px;
+    children: [ entry, mode-switcher ];
+}
+
+entry {
+    font: "Noto Sans Medium 13";
+    placeholder: "Search";
+    placeholder-color: @muted;
+    vertical-align: 0.5;
+    cursor: text;
+}
+
+mode-switcher {
+    spacing: 4px;
+}
+
+button {
+    padding: 4px 10px;
+    border-radius: 7px;
+    text-color: @muted;
+    cursor: pointer;
+}
+
+button selected {
+    background-color: @primary-container;
+    text-color: @on-primary;
+}
+
+listview {
+    lines: 9;
+    spacing: 2px;
+    scrollbar: false;
+    fixed-height: true;
+}
+
+element {
+    padding: 8px 12px;
+    spacing: 12px;
+}
+
+element-icon {
+    size: 28px;
+}
+
+textbox-hints {
+    content: "<b>↑ ↓</b> select     <b>Enter</b> open     <b>Ctrl Tab</b> next mode     <b>Esc</b> close";
+}

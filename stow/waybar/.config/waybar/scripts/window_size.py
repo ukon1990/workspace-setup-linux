@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resize the focused Hyprland window from a Waybar dropdown."""
+"""Resize the focused Hyprland window (or its tab group) from a panel of sizes."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path.home() / "scripts"))
+import rofi_menu  # noqa: E402
 import wofi_anchor  # noqa: E402
 
 FRACTION_CHOICES = (
@@ -23,8 +24,11 @@ FRACTION_CHOICES = (
     ("2/3", Fraction(2, 3)),
     ("1/2", Fraction(1, 2)),
 )
-MENU_WIDTH = 320
-MENU_HEIGHT = 520
+# Sizes offered in the panel, small to large (2/4 equals 1/2 and stays CLI-only).
+MENU_FRACTIONS = tuple(
+    choice for label in ("1/4", "1/3", "1/2", "2/3", "3/4") for choice in FRACTION_CHOICES if choice[0] == label
+)
+MENU_WIDTH = 700
 
 
 class WindowSizeError(RuntimeError):
@@ -44,14 +48,6 @@ class SizeOption:
     label: str
     fraction: Fraction
     floating: bool
-
-
-OPTIONS = tuple(
-    SizeOption(f"{mode} · {label}", fraction, floating)
-    for mode, floating in (("Tiled", False), ("Float", True))
-    for label, fraction in FRACTION_CHOICES
-)
-OPTIONS_BY_LABEL = {option.label: option for option in OPTIONS}
 
 
 def run(command: list[str], *, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -139,72 +135,78 @@ def calculate_floating_geometry(
     return Geometry(x=x, y=y, width=width, height=area.height)
 
 
-def menu_command(mode: str, window: dict[str, Any], monitor: dict[str, Any]) -> list[str]:
-    command = [
-        "wofi",
-        "--dmenu",
-        "--prompt",
-        "Window size",
-        "--width",
-        str(MENU_WIDTH),
-        "--lines",
-        str(len(OPTIONS)),
-        "--no-custom-entry",
-        "--hide-scroll",
-        "--dynamic-lines",
-    ]
-    if mode == "overlay":
-        command.extend(wofi_anchor.wofi_search_args())
-        try:
-            window_x, window_y = (int(value) for value in window["at"])
-            window_width, window_height = (int(value) for value in window["size"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise WindowSizeError("Hyprland returned incomplete window geometry") from exc
-        area = work_area(monitor)
-        x = window_x + (window_width - MENU_WIDTH) // 2
-        y = window_y + (window_height - MENU_HEIGHT) // 2
-        x, y, height = wofi_anchor.clamp_to_area(
-            x, y, MENU_WIDTH, MENU_HEIGHT, area.x, area.y, area.width, area.height
-        )
-        try:
-            monitor_name = str(monitor["name"])
-            monitor_x, monitor_y = int(monitor["x"]), int(monitor["y"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise WindowSizeError("Hyprland returned incomplete monitor geometry") from exc
-        command.extend(
-            [
-                "--monitor",
-                monitor_name,
-                "--location",
-                "top_left",
-                "--xoffset",
-                str(x - monitor_x),
-                "--yoffset",
-                str(y - monitor_y),
-                "--height",
-                str(height),
-                "--define",
-                "close_on_focus_loss=true",
-            ]
-        )
-    else:
-        command.extend(wofi_anchor.wofi_menu_args(MENU_WIDTH, MENU_HEIGHT))
-    return command
+def size_icon(label: str, fraction: Fraction, floating: bool) -> str:
+    """The size drawn against the screen: docked left when tiled, centred when floating."""
+    palette = rofi_menu.colors()
+    width = round(112 * fraction)
+    block = (
+        f'<rect x="{64 - width / 2}" y="44" width="{width}" height="40" rx="3" fill="{palette["muted"]}"/>'
+        if floating
+        else f'<rect x="8" y="34" width="{width}" height="60" rx="3" fill="{palette["muted"]}"/>'
+    )
+    screen = f'<rect x="3" y="29" width="122" height="70" rx="6" fill="none" stroke="{palette["muted"]}" stroke-opacity="0.5" stroke-width="2"/>'
+    name = f"size-{'float' if floating else 'tiled'}-{label.replace('/', '-')}"
+    return rofi_menu.svg_icon(name, screen + block)
+
+
+def target_label(window: dict[str, Any]) -> str:
+    """Name what will be resized, so a tab group is never a surprise."""
+    title = rofi_menu.esc(str(window.get("title") or window.get("class") or "Window")[:32])
+    tabs = len(window.get("grouped") or [])
+    return f"<b>{title}</b>" + (f"  <span alpha='65%'>· group of {tabs} tabs</span>" if tabs > 1 else "")
 
 
 def choose_option(mode: str, window: dict[str, Any], monitor: dict[str, Any]) -> SizeOption | None:
-    if not shutil.which("wofi"):
-        raise WindowSizeError("wofi is not installed")
-    choice = wofi_anchor.run_wofi_menu(
-        menu_command(mode, window, monitor),
-        input_text="\n".join(option.label for option in OPTIONS),
-    )
-    if not choice:
-        return None
+    if not shutil.which("rofi"):
+        raise WindowSizeError("rofi is not installed")
+    anchor = wofi_anchor.cursor_anchor() if mode == "menu" else None  # overlay: centred
+    widths = [fraction_width(monitor, fraction) for _, fraction in MENU_FRACTIONS]
     try:
-        return OPTIONS_BY_LABEL[choice]
-    except KeyError as exc:
-        raise WindowSizeError(f"Unknown window size selection: {choice}") from exc
+        current = int(window["size"][0])
+    except (KeyError, TypeError, ValueError):
+        current = widths[0]
+    selected = min(range(len(widths)), key=lambda index: abs(widths[index] - current))
+    floating = bool(window.get("floating"))
+    digit_keys = tuple(str(number) for number in range(1, len(MENU_FRACTIONS) + 1))
+    while True:
+        rows = [
+            rofi_menu.Row(
+                f"<b>{label}</b>\n<span size='small' alpha='70%'>{width} px</span>",
+                size_icon(label, fraction, floating),
+            )
+            for (label, fraction), width in zip(MENU_FRACTIONS, widths)
+        ]
+        choice = rofi_menu.pick(
+            rows,
+            header=(
+                f"{rofi_menu.label('RESIZE')}  {target_label(window)}"
+                f"      {rofi_menu.chips(('Tiled', 'Float'), int(floating))}"
+            ),
+            hint=rofi_menu.hints(
+                ("← →", "size"),
+                (f"1…{len(digit_keys)}", "pick directly"),
+                ("Enter", "apply"),
+                ("Ctrl Tab", "tiled" if floating else "float"),
+            ),
+            selected=selected,
+            width=MENU_WIDTH,
+            columns=len(rows),
+            icon_size=96,
+            row_lines=2,
+            custom_keys=("Control+Tab", *digit_keys),
+            anchor=anchor,
+        )
+        if choice.key == rofi_menu.CANCEL:
+            return None
+        if choice.key == 1:
+            floating = not floating
+            selected = choice.index if choice.index is not None else selected
+            continue
+        index = choice.key - 2 if choice.key >= 2 else choice.index
+        if index is None:
+            return None
+        label, fraction = MENU_FRACTIONS[index]
+        return SizeOption(f"{'Float' if floating else 'Tiled'} · {label}", fraction, floating)
 
 
 def lua_selector(address: str) -> str:

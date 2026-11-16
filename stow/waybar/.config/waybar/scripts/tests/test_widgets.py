@@ -73,6 +73,10 @@ class WidgetTests(unittest.TestCase):
         with patch.object(cpu, "cpu_module", return_value={"text": "CPU", "tooltip": "x < y & z"}):
             payload = loader.dispatch("cpu", [])
         self.assertEqual(payload["tooltip"], "x &lt; y &amp; z")
+        markup = {"text": "CPU", "tooltip": "<b>x</b>", "markup": True}
+        with patch.object(cpu, "cpu_module", return_value=markup):
+            payload = loader.dispatch("cpu", [])  # widgets.tooltip.render() output passes through
+        self.assertEqual(payload, {"text": "CPU", "tooltip": "<b>x</b>"})
         self.assertEqual(json.loads(json.dumps(payload)), payload)
 
     def test_action_routing(self):
@@ -82,27 +86,37 @@ class WidgetTests(unittest.TestCase):
             self.assertIsNone(loader.dispatch("hyprsunset-adjust", ["-250"]))
             self.assertEqual(handler.call_args.args[1], ["-250"])
 
-    def test_hyprsunset_menu_uses_shared_wofi_dropdown(self):
+    def test_hyprsunset_menu_applies_the_picked_preset(self):
         from widgets import hyprsunset
 
-        with (
-            patch.object(hyprsunset.shutil, "which", return_value="/usr/bin/wofi"),
-            patch.object(
-                hyprsunset.wofi_anchor,
-                "wofi_menu_args",
-                return_value=["--insensitive", "--normal-window"],
-            ) as menu_args,
-            patch.object(
-                hyprsunset.wofi_anchor,
-                "run_wofi_menu",
-                return_value="",
-            ) as run_menu,
-        ):
-            hyprsunset.hyprsunset_menu({}, [])
+        def run_menu(index):
+            with (
+                patch.object(hyprsunset.shutil, "which", return_value="/usr/bin/rofi"),
+                patch.object(hyprsunset.wofi_anchor, "cursor_anchor", return_value=None),
+                patch.object(hyprsunset, "_menu_rows", return_value=[]),
+                patch.object(hyprsunset.rofi_menu, "pick", return_value=hyprsunset.rofi_menu.Choice(index, 0)),
+                patch.object(hyprsunset, "_apply_preset") as preset,
+                patch.object(hyprsunset, "hyprsunset_schedule") as schedule,
+                patch.object(hyprsunset, "hyprsunset_reset") as reset,
+            ):
+                hyprsunset.hyprsunset_menu({}, [])
+            return preset, schedule, reset
 
-        menu_args.assert_called_once_with(hyprsunset.MENU_WIDTH, hyprsunset.MENU_HEIGHT)
-        self.assertEqual(run_menu.call_args.args[0][-2:], ["--insensitive", "--normal-window"])
-        self.assertIn("Edit schedule…", run_menu.call_args.kwargs["input_text"])
+        self.assertEqual(run_menu(1)[0].call_args.args[1], "3500K")
+        self.assertEqual(run_menu(5)[0].call_args.args[1], "off")
+        run_menu(6)[1].assert_called_once()
+        run_menu(7)[2].assert_called_once()
+        self.assertFalse(run_menu(None)[0].called)
+
+    def test_hyprsunset_schedule_fields_are_validated(self):
+        from widgets.hyprsunset import _parse_schedule_field
+
+        self.assertEqual(_parse_schedule_field(0, "7:05"), "07:05")
+        self.assertIsNone(_parse_schedule_field(1, "25:00"))
+        self.assertEqual(_parse_schedule_field(2, "4500 K"), 4500)
+        self.assertIsNone(_parse_schedule_field(2, "9000"))
+        self.assertEqual(_parse_schedule_field(3, "0.9"), 0.9)
+        self.assertIsNone(_parse_schedule_field(3, "3"))
 
     def test_process_ranking_and_pid_reuse(self):
         old = {"1": {"ticks": 100, "start": "5"}}
@@ -147,7 +161,7 @@ class WidgetTests(unittest.TestCase):
         ):
             tooltip = gpu.gpu_module({})["tooltip"]
             self.assertIn("25.0%", tooltip)
-            self.assertIn("Power draw: Unavailable", tooltip)
+            self.assertIn("Unavailable / 300 W", tooltip)
         with (
             patch.object(gpu, "run", return_value=subprocess.CompletedProcess([], 1, "")),
             patch.object(gpu, "use_compact_perf_text", return_value=True),
@@ -163,8 +177,8 @@ class WidgetTests(unittest.TestCase):
         ):
             tooltip = memory.memory_module({})["tooltip"]
         self.assertIn("75.0%", tooltip)
-        self.assertIn("Swap: 1.0 MiB / 2.0 MiB", tooltip)
-        self.assertIn("Cache: 1.0 MiB", tooltip)
+        self.assertIn("1.0 MiB / 2.0 MiB</tt>", tooltip)
+        self.assertRegex(tooltip, r"Cache\s*</span>  1\.0 MiB")
 
     def test_cpu_delta_and_first_sample(self):
         def read(path, *args, **kwargs):
@@ -180,7 +194,7 @@ class WidgetTests(unittest.TestCase):
         ):
             self.assertIn("Collecting", cpu.cpu_module({})["tooltip"])
             payload = cpu.cpu_module({"cpu_prev": {"total": 100, "idle": 50}})
-            self.assertIn("CPU usage: 50.0%", payload["tooltip"])
+            self.assertIn("<b>50.0%</b>", payload["tooltip"])
 
     def test_metric_command_failures(self):
         for failure in [FileNotFoundError(), subprocess.TimeoutExpired("tool", 3)]:
@@ -232,9 +246,10 @@ class WidgetTests(unittest.TestCase):
         }
         with patch.object(kubernetes, "_load_status", return_value=status):
             payload = kubernetes.kubernetes_module({})
-        self.assertEqual(payload["text"], "󰠳 P 1/2 W 1/1 !1")
+        self.assertIn("1/2 pods", payload["text"])
+        self.assertIn("● 1 not ready", payload["text"])
         self.assertIn("warning", payload["class"])
-        self.assertIn("Context: demo", payload["tooltip"])
+        self.assertRegex(payload["tooltip"], r"Context\s*</span>  demo")
         self.assertIn("…and 2 more", payload["tooltip"])
         with patch.object(
             kubernetes,
@@ -249,7 +264,7 @@ class WidgetTests(unittest.TestCase):
             },
         ):
             muted = kubernetes.kubernetes_module({})
-        self.assertEqual(muted["text"], "󰠳 n/a")
+        self.assertTrue(muted["text"].endswith(" n/a"))
         self.assertIn("muted", muted["class"])
 
 

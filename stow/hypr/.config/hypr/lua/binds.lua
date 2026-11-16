@@ -6,6 +6,9 @@ local bind = require("lua.hotkeys").bind
 local terminal = "kitty"
 local fileManager = "dolphin"
 local menu = hypr .. "/scripts/app-launcher.sh"
+local window_switcher = hypr .. "/scripts/window-switcher.sh"
+local clipboard_menu = hypr .. "/scripts/clipboard-menu.sh"
+local gamemode = require("lua.gamemode")
 
 local hotkey_menu = hypr .. "/scripts/hotkey-menu.sh"
 local lock_session = hypr .. "/scripts/lock-session.sh"
@@ -17,12 +20,56 @@ local wallpaper_picker = home .. "/.config/themes/bin/theme wallpaper picker"
 bind(mainMod .. " + T", "Open terminal", hl.dsp.exec_cmd(terminal))
 bind(mainMod .. " + Q", "Close active window", hl.dsp.window.kill())
 bind(
-	mainMod .. " + M",
+	mainMod .. " + SHIFT + Escape",
 	"Exit Hyprland",
 	hl.dsp.exec_cmd("command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch 'hl.dsp.exit()'")
 )
 bind(mainMod .. " + E", "Open file manager", hl.dsp.exec_cmd(fileManager))
 bind(mainMod .. " + V", "Toggle floating window", hl.dsp.window.float({ action = "toggle" }))
+bind(mainMod .. " + F", "Toggle fullscreen", hl.dsp.window.fullscreen({ mode = "fullscreen" }))
+bind(mainMod .. " + SHIFT + F", "Toggle maximize (keeps the bar)", hl.dsp.window.fullscreen({ mode = "maximized" }))
+-- Window switcher: hold Super, tap Tab to move, release Super to switch.
+-- Hyprland handles the keys so the release is seen; rofi only draws the cards.
+-- A release *bind* on Super is skipped after a key combo, so the release is
+-- read from the raw key event instead. Super_L/R are XKB keycodes 133/134
+-- (evdev 125/126, accepted too in case the event reports those).
+local SUPER_KEYCODES = { [133] = true, [134] = true, [125] = true, [126] = true }
+local KEY_RELEASED = 0
+local function switcher(action)
+	return hl.dsp.exec_cmd(window_switcher .. " " .. action)
+end
+bind(mainMod .. " + TAB", "Switch window (hold Super, tap Tab, release)", function()
+	hl.dispatch(hl.dsp.submap("switcher"))
+	hl.dispatch(switcher("start"))
+end)
+hl.define_submap("switcher", function()
+	hl.bind(mainMod .. " + TAB", switcher("next"))
+	hl.bind(mainMod .. " + SHIFT + TAB", switcher("prev"))
+	hl.bind(mainMod .. " + Escape", switcher("cancel"))
+	hl.bind("Escape", switcher("cancel"))
+end)
+hl.on("input.keyboard.key", function(keycode, _time, key_state)
+	if key_state == KEY_RELEASED and SUPER_KEYCODES[keycode] and hl.get_current_submap() == "switcher" then
+		hl.dispatch(switcher("commit"))
+	end
+end)
+
+bind(mainMod .. " + R", "Enter resize mode (arrows resize, Escape leaves)", hl.dsp.submap("resize"))
+hl.define_submap("resize", function()
+	local step = 40
+	hl.bind("right", hl.dsp.window.resize({ x = step, y = 0, relative = true }), { repeating = true })
+	hl.bind("left", hl.dsp.window.resize({ x = -step, y = 0, relative = true }), { repeating = true })
+	hl.bind("down", hl.dsp.window.resize({ x = 0, y = step, relative = true }), { repeating = true })
+	hl.bind("up", hl.dsp.window.resize({ x = 0, y = -step, relative = true }), { repeating = true })
+	hl.bind("escape", hl.dsp.submap("reset"))
+	hl.bind("Return", hl.dsp.submap("reset"))
+end)
+
+bind(mainMod .. " + SHIFT + T", "Toggle dropdown terminal", hl.dsp.workspace.toggle_special("term"))
+bind(mainMod .. " + C", "Open clipboard history", hl.dsp.exec_cmd(clipboard_menu))
+bind(mainMod .. " + SHIFT + C", "Pick a colour to the clipboard", hl.dsp.exec_cmd("hyprpicker -a"))
+bind(mainMod .. " + N", "Toggle do not disturb", hl.dsp.exec_cmd("makoctl mode -t do-not-disturb"))
+bind(mainMod .. " + F9", "Toggle game mode", gamemode.toggle)
 bind(mainMod .. " + SHIFT + R", "Open window size menu", hl.dsp.exec_cmd(window_size_menu))
 bind(mainMod .. " + SHIFT + W", "Choose wallpaper", hl.dsp.exec_cmd(wallpaper_picker))
 bind(mainMod .. " + SPACE", "Open application launcher", hl.dsp.exec_cmd(menu))
@@ -35,8 +82,14 @@ bind(mainMod .. " + J", "Toggle split direction", hl.dsp.layout("togglesplit"))
 bind("Print", "Open screenshot menu", hl.dsp.exec_cmd(screenshot_menu))
 
 bind(mainMod .. " + G", "Toggle window group", hl.dsp.group.toggle())
-bind(mainMod .. " + TAB", "Focus next window in group", hl.dsp.group.next())
-bind(mainMod .. " + SHIFT + TAB", "Focus previous window in group", hl.dsp.group.prev())
+bind("ALT + TAB", "Focus next tab in group", hl.dsp.group.next())
+bind("ALT + SHIFT + TAB", "Focus previous tab in group", hl.dsp.group.prev())
+bind(mainMod .. " + CTRL + G", "Lock group (new windows stop joining)", hl.dsp.group.lock({ action = "toggle" }))
+bind(mainMod .. " + CTRL + left", "Move tab left in group", hl.dsp.group.move_window({ forward = false }))
+bind(mainMod .. " + CTRL + right", "Move tab right in group", hl.dsp.group.move_window({ forward = true }))
+for tab = 1, 9 do
+	bind(mainMod .. " + CTRL + " .. tab, ("Jump to tab %d in group"):format(tab), hl.dsp.group.active({ index = tab }))
+end
 bind(mainMod .. " + SHIFT + G", "Move window out of group", hl.dsp.window.move({ out_of_group = true }))
 bind(
 	mainMod .. " + SHIFT + left",

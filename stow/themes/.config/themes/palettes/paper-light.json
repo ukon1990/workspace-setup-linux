@@ -12,18 +12,21 @@
         "text": "#2d261c",
         "text_muted": "#5a4f3d",
         "primary": "#a85a18",
-        "primary_container": "#f2d5ac",
-        "on_primary": "#2d1a08",
+        "primary_container": "#9c5216",
+        "on_primary": "#fff4e6",
         "accent_container": "#d98c3d",
         "on_accent": "#2d1a08",
         "hypr_active_border": "#a85a18",
         "hypr_inactive_border": "#b7a98d",
         "shadow": "#3a2f22",
-        "groupbar_active": "#f2d5ac",
+        "groupbar_active": "#9c5216",
         "groupbar_inactive": "#ebe3d2",
-        "groupbar_locked_active": "#e6bd7e",
-        "groupbar_locked_inactive": "#ddd1ba",
-        "groupbar_text_active": "#2d1a08",
-        "groupbar_text_inactive": "#5a4f3d"
+        "groupbar_locked_active": "#2f5f86",
+        "groupbar_locked_inactive": "#d6e2ec",
+        "groupbar_text_active": "#fff4e6",
+        "groupbar_text_inactive": "#5a4f3d",
+        "groupbar_text_locked_active": "#f0f7fd",
+        "groupbar_text_locked_inactive": "#2c4c66",
+        "warn": "#9a5b00"
     }
 }

@@ -1,0 +1,32 @@
+{
+    "name": "rosewood",
+    "display_name": "Rosewood",
+    "mode": "dark",
+    "icon": "\uf186",
+    "colors": {
+        "bg": "#130f14",
+        "surface": "#1c161d",
+        "surface_high": "#261e28",
+        "surface_higher": "#352a37",
+        "outline": "#9a8a9c",
+        "text": "#f0e4ee",
+        "text_muted": "#b5a3b6",
+        "primary": "#e58fb4",
+        "primary_container": "#6a2748",
+        "on_primary": "#ffeaf3",
+        "accent_container": "#a04a74",
+        "on_accent": "#ffffff",
+        "hypr_active_border": "#e58fb4",
+        "hypr_inactive_border": "#43354a",
+        "shadow": "#070508",
+        "groupbar_active": "#6a2748",
+        "groupbar_inactive": "#1c161d",
+        "groupbar_locked_active": "#7a5a1e",
+        "groupbar_locked_inactive": "#221c10",
+        "groupbar_text_active": "#ffeaf3",
+        "groupbar_text_inactive": "#b5a3b6",
+        "groupbar_text_locked_active": "#fff3da",
+        "groupbar_text_locked_inactive": "#c9b27c",
+        "warn": "#e0a458"
+    }
+}

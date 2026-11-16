@@ -1,0 +1,32 @@
+{
+    "name": "graphite",
+    "display_name": "Graphite",
+    "mode": "dark",
+    "icon": "\uf186",
+    "colors": {
+        "bg": "#0e0e0f",
+        "surface": "#17171a",
+        "surface_high": "#202024",
+        "surface_higher": "#2d2d33",
+        "outline": "#8c8c95",
+        "text": "#e8e8ea",
+        "text_muted": "#a6a6ad",
+        "primary": "#f08a6c",
+        "primary_container": "#6b2f20",
+        "on_primary": "#fff0ea",
+        "accent_container": "#a14a33",
+        "on_accent": "#ffffff",
+        "hypr_active_border": "#f08a6c",
+        "hypr_inactive_border": "#3a3a41",
+        "shadow": "#050505",
+        "groupbar_active": "#6b2f20",
+        "groupbar_inactive": "#17171a",
+        "groupbar_locked_active": "#2f4f6b",
+        "groupbar_locked_inactive": "#141c24",
+        "groupbar_text_active": "#fff0ea",
+        "groupbar_text_inactive": "#a6a6ad",
+        "groupbar_text_locked_active": "#e6f1fb",
+        "groupbar_text_locked_inactive": "#9fb6cc",
+        "warn": "#e8c95a"
+    }
+}

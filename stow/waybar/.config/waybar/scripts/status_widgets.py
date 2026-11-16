@@ -36,8 +36,9 @@ def dispatch(command, argv):
             handler(state, argv)
             return None
         payload = dict(handler(state))
-    # Tooltip content is plain text; escape metadata/process names for Pango.
-    payload["tooltip"] = html.escape(str(payload.get("tooltip", "")), quote=False)
+    # Plain-text tooltips are escaped here; widgets.tooltip.render() output is markup already.
+    if not payload.pop("markup", False):
+        payload["tooltip"] = html.escape(str(payload.get("tooltip", "")), quote=False)
     return payload
 
 

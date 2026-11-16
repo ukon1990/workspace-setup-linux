@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ..common import clamp, classes, perf_text, push_history, run, use_compact_perf_text
 from ..formatting import compact_rate, human_bytes, human_rate
+from ..tooltip import esc, header, render, table
 from .apps import app_tooltip
 
 
@@ -73,7 +74,7 @@ def network_module(state):
     except OSError:
         status = "Unavailable"
     addresses = ip_json("address", "show", "dev", iface)
-    lines = [f"Interface: {iface}", f"State: {status}"]
+    rows = [("Now", f"<b>\u2193 {human_rate(down)}   \u2191 {human_rate(up)}</b>")]
     for family, label in [("inet", "IPv4"), ("inet6", "IPv6")]:
         values = [
             a["local"]
@@ -81,21 +82,19 @@ def network_module(state):
             for a in entry.get("addr_info", [])
             if a.get("family") == family and a.get("local")
         ]
-        lines.append(f"{label}: " + (", ".join(values) or "Unavailable"))
-    lines += [
-        f"Gateway: {route.get('gateway', 'Unavailable')}",
-        f"Down: {human_rate(down)}",
-        f"Up: {human_rate(up)}",
-        f"Received: {human_bytes(rx)}",
-        f"Sent: {human_bytes(tx)}",
-        "Totals since interface counters started/reset",
+        extra = f"  +{len(values) - 1} more" if len(values) > 1 else ""
+        rows.append((label, esc(values[0]) + extra if values else "Unavailable"))
+    rows += [
+        ("Gateway", esc(route.get("gateway", "Unavailable"))),
+        ("Total", f"\u2193 {human_bytes(rx)}   \u2191 {human_bytes(tx)}"),
     ]
-    lines.extend(app_tooltip(iface))
+    lines = [header("NETWORK", f"{iface} · {status}"), *table(rows)]
+    lines.extend(esc(line) for line in app_tooltip(iface))
     combined = down + up
     history = push_history(state, "net_history", clamp(combined / (1024 * 1024 * 2) * 100))
     compact = use_compact_perf_text(state)
     return {
-        "text": perf_text("󰖟", compact_rate(combined).strip(), history, compact),
-        "tooltip": "\n".join(lines),
+        "text": perf_text("NET", compact_rate(combined).strip(), history, compact),
+        **render(lines),
         "class": classes("metric", "compact" if compact else None),
     }

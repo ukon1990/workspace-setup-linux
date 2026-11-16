@@ -11,11 +11,16 @@ swaps colors across all three.
 ├── README.md
 ├── palettes/                   # theme definitions (source of truth)
 │   ├── amber-dark.json
+│   ├── fjord-light.json
+│   ├── graphite.json
+│   ├── moss.json
 │   ├── paper-light.json
 │   ├── rainbow.json
+│   ├── rosewood.json
 │   ├── slate-dark.json
 │   ├── solarized-dark.json
-│   └── solarized-light.json
+│   ├── solarized-light.json
+│   └── tidepool.json
 ├── bin/
 │   ├── theme                   # main CLI (Python)
 │   ├── set-theme               # convenience wrapper: `theme set ...`
@@ -29,6 +34,9 @@ Generated files (rewritten every time a theme is applied):
 - `~/.config/hypr/theme.lua` — loaded from `hyprland.lua` via `require("theme")`
 - `~/.config/waybar/colors.css` — imported from `waybar/style.css`
 - `~/.config/wofi/style.css` — shared palette styling for wofi dropdowns
+- `~/.config/rofi/colors.rasi` — color variables for the rofi launcher
+  (Super+Space) and window switcher (Super+Tab); their layouts live in
+  `stow/rofi/.config/rofi/`
 - `~/.config/mako/config` — full mako config (regenerated in place)
 - `~/.config/swappy/config` — full swappy config (regenerated in place); its
   `custom_color` tracks the palette's `primary` accent so the screenshot
@@ -110,8 +118,9 @@ gsettings set org.gnome.desktop.interface color-scheme prefer-dark
 gsettings set org.gnome.desktop.interface color-scheme prefer-light
 ```
 
-It also updates the legacy `gtk-application-prefer-dark-theme` key for
-older GTK apps that still read it.
+GTK 3 apps ignore `color-scheme` and only follow the theme name, so the
+stock Adwaita theme is switched to its matching variant as well
+(`gtk-theme` `Adwaita-dark` for dark themes, `Adwaita` for light ones).
 
 Apps that pick this up automatically:
 
@@ -125,9 +134,8 @@ Apps that **don't** pick it up automatically usually just need a flag
 in their own settings (for example Vivaldi has
 Settings → Themes → "Use system appearance").
 
-The manager does **not** touch the GTK theme name (`gtk-theme` /
-`icon-theme`) — only the color-scheme preference — so it won't
-clobber the theme you've already picked in `gtkrc` / `gtk-4.0`.
+A custom GTK theme is left alone: `gtk-theme` is only changed while it
+is one of the two Adwaita variants, and `icon-theme` is never touched.
 
 ## Commands in detail
 
@@ -212,6 +220,12 @@ Create `~/.config/themes/palettes/<name>.json` with these keys:
     }
 }
 ```
+
+Three more keys are optional: `groupbar_text_locked_active` and
+`groupbar_text_locked_inactive` (text on locked tabs; default to the regular
+tab text colors) and `warn` (attention color for warnings in the bar and
+tooltips; defaults to amber). Give locked tabs a hue and lightness that differ
+from the focused tab, since the fill is the only thing telling them apart.
 
 Field notes:
 

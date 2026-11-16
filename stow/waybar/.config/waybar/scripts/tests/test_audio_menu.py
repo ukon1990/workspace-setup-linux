@@ -40,26 +40,35 @@ class AudioMenuTests(unittest.TestCase):
         self.assertEqual(
             sinks,
             [
-                audio_menu.AudioDevice(56, "Monitor Audio Digital Stereo", False),
-                audio_menu.AudioDevice(57, "Headset Analog Stereo", True),
-                audio_menu.AudioDevice(60, "Headset Analog Stereo", False),
+                audio_menu.AudioDevice(56, "Monitor Audio Digital Stereo", False, 0.45),
+                audio_menu.AudioDevice(57, "Headset Analog Stereo", True, 1.0),
+                audio_menu.AudioDevice(60, "Headset Analog Stereo", False, 0.55),
             ],
         )
         self.assertEqual(
             sources,
             [
-                audio_menu.AudioDevice(58, "Headset Mono", False),
-                audio_menu.AudioDevice(59, "Webcam Analog Stereo", True),
+                audio_menu.AudioDevice(58, "Headset Mono", False, 1.0),
+                audio_menu.AudioDevice(59, "Webcam Analog Stereo", True, 1.0),
             ],
         )
 
-    def test_device_menu_labels_are_unique_and_mark_default(self):
-        first = audio_menu.AudioDevice(57, "Headset", True)
-        second = audio_menu.AudioDevice(60, "Headset", False)
+    def test_device_row_shows_name_detail_volume_and_default(self):
+        device = audio_menu.AudioDevice(57, "Headset Analog Stereo", True, 0.5)
+        row = device.row({}).text
+        self.assertIn("●  <b>Headset</b>", row)
+        self.assertIn("50%", row)
+        self.assertIn("analog stereo · default", row)
+        muted = audio_menu.AudioDevice(56, "Monitor Audio Digital Stereo", False, 0.45, True)
+        self.assertIn("muted", muted.row({}).text)
+        self.assertEqual(
+            muted.name_and_detail({"Monitor Audio": "Desk monitor"}),
+            ("Desk monitor", "Monitor Audio · digital stereo"),
+        )
 
-        self.assertEqual(first.menu_label, "● Headset  ·  57")
-        self.assertEqual(second.menu_label, "○ Headset  ·  60")
-        self.assertNotEqual(first.menu_label, second.menu_label)
+    def test_parse_devices_reads_muted_state(self):
+        status = WPCTL_STATUS.replace("[vol: 0.45]", "[vol: 0.45 MUTED]")
+        self.assertTrue(audio_menu.parse_devices(status, "Sinks")[0].muted)
 
     def test_parse_devices_rejects_missing_section(self):
         with self.assertRaisesRegex(audio_menu.AudioMenuError, "Sources section"):
@@ -78,58 +87,6 @@ class AudioMenuTests(unittest.TestCase):
 
         with self.assertRaisesRegex(audio_menu.AudioMenuError, "No output devices"):
             audio_menu.audio_devices("Sinks")
-
-    @patch("audio_menu.wofi_anchor.run_wofi_menu")
-    @patch("audio_menu.wofi_anchor.wofi_menu_args")
-    @patch("audio_menu.shutil.which", return_value="/usr/bin/wofi")
-    def test_choose_delegates_to_shared_wofi_helper(self, _which, menu_args, run_menu):
-        menu_args.return_value = ["--normal-window", "--height", "320"]
-        run_menu.return_value = "Input devices"
-
-        result = audio_menu.choose("Audio", audio_menu.TOP_LEVEL_OPTIONS)
-
-        self.assertEqual(result, "Input devices")
-        menu_args.assert_called_once_with(audio_menu.MENU_WIDTH, audio_menu.MENU_HEIGHT)
-        command = run_menu.call_args.args[0]
-        self.assertEqual(command[-3:], ["--normal-window", "--height", "320"])
-        self.assertNotIn("--dynamic-lines", command)
-        self.assertIn("dynamic_lines=true", command)
-        self.assertEqual(
-            run_menu.call_args.kwargs["input_text"],
-            "Output devices\nInput devices\nOpen audio controls",
-        )
-        self.assertIsNone(run_menu.call_args.kwargs["anchor"])
-
-    @patch("audio_menu.choose")
-    @patch("audio_menu.audio_devices")
-    def test_choose_device_resolves_the_selected_id(self, audio_devices, choose):
-        selected = audio_menu.AudioDevice(60, "Headset", False)
-        audio_devices.return_value = [
-            audio_menu.AudioDevice(57, "Headset", True),
-            selected,
-        ]
-        choose.return_value = selected.menu_label
-
-        self.assertEqual(audio_menu.choose_device("Sinks"), selected)
-        choose.assert_called_once_with(
-            "Audio output",
-            ["● Headset  ·  57", "○ Headset  ·  60"],
-            None,
-        )
-
-    @patch("audio_menu.wofi_anchor.run_wofi_menu")
-    @patch("audio_menu.audio_devices")
-    def test_choose_device_resolves_non_default_through_shared_runner(
-        self, audio_devices, run_menu
-    ):
-        selected = audio_menu.AudioDevice(60, "Headset", False)
-        audio_devices.return_value = [
-            audio_menu.AudioDevice(57, "Headset", True),
-            selected,
-        ]
-        run_menu.return_value = selected.menu_label
-
-        self.assertEqual(audio_menu.choose_device("Sinks"), selected)
 
     @patch("audio_menu.run")
     def test_set_default_uses_wpctl_device_id(self, run):
@@ -153,52 +110,63 @@ class AudioMenuTests(unittest.TestCase):
             start_new_session=True,
         )
 
-    @patch("audio_menu.set_default")
-    @patch("audio_menu.choose_device")
-    @patch("audio_menu.choose", side_effect=["Output devices"])
-    @patch("audio_menu.wofi_anchor.cursor_anchor")
-    def test_main_routes_output_selection(self, cursor_anchor, _choose, choose_device, set_default):
-        anchor = audio_menu.wofi_anchor.DropdownAnchor(100, 20, 0, 48, 1920, 1032)
-        cursor_anchor.return_value = anchor
-        selected = audio_menu.AudioDevice(57, "Headset", False)
-        choose_device.return_value = selected
+    DEVICES = [
+        audio_menu.AudioDevice(56, "Monitor Audio Digital Stereo", False, 0.45),
+        audio_menu.AudioDevice(57, "Headset Analog Stereo", True, 1.0),
+    ]
 
-        self.assertEqual(audio_menu.main(), 0)
-        _choose.assert_called_once_with("Audio", audio_menu.TOP_LEVEL_OPTIONS, anchor)
-        choose_device.assert_called_once_with("Sinks", anchor)
-        set_default.assert_called_once_with(selected)
+    def run_main(self, *choices):
+        """Run main() with the panel answering ``choices`` in order."""
+        with (
+            patch.object(audio_menu.wofi_anchor, "cursor_anchor", return_value=None),
+            patch.object(audio_menu, "audio_devices", return_value=self.DEVICES) as devices,
+            patch.object(audio_menu, "choose", side_effect=list(choices)) as choose,
+        ):
+            return audio_menu.main(), devices, choose
 
-    @patch("audio_menu.set_default")
-    @patch("audio_menu.choose_device")
-    @patch("audio_menu.choose", return_value="Input devices")
-    @patch("audio_menu.wofi_anchor.cursor_anchor", return_value=None)
-    def test_main_does_not_reset_current_default(
-        self, _cursor_anchor, _choose, choose_device, set_default
-    ):
-        choose_device.return_value = audio_menu.AudioDevice(59, "Webcam", True)
+    @patch.object(audio_menu, "set_default")
+    def test_main_sets_the_picked_device_as_default(self, set_default):
+        result, _, _ = self.run_main(audio_menu.rofi_menu.Choice(0, 0))
+        self.assertEqual(result, 0)
+        set_default.assert_called_once_with(self.DEVICES[0])
 
-        self.assertEqual(audio_menu.main(), 0)
-        choose_device.assert_called_once_with("Sources", None)
+    @patch.object(audio_menu, "set_default")
+    def test_main_does_not_reset_current_default(self, set_default):
+        self.run_main(audio_menu.rofi_menu.Choice(1, 0))
         set_default.assert_not_called()
 
-    @patch("audio_menu.open_audio_controls")
-    @patch("audio_menu.choose", return_value="Open audio controls")
-    @patch("audio_menu.wofi_anchor.cursor_anchor", return_value=None)
-    def test_main_opens_audio_controls(self, _cursor_anchor, _choose, open_audio_controls):
-        self.assertEqual(audio_menu.main(), 0)
+    def test_main_flips_between_outputs_and_inputs(self):
+        _, devices, choose = self.run_main(
+            audio_menu.rofi_menu.Choice(0, 1), audio_menu.rofi_menu.Choice(None, -1)
+        )
+        self.assertEqual([call.args[0] for call in devices.call_args_list], ["Sinks", "Sources"])
+        self.assertEqual([call.args[0] for call in choose.call_args_list], [0, 1])
+
+    @patch.object(audio_menu, "toggle_mute")
+    def test_main_mutes_and_reopens(self, toggle_mute):
+        _, _, choose = self.run_main(
+            audio_menu.rofi_menu.Choice(0, 2), audio_menu.rofi_menu.Choice(None, -1)
+        )
+        toggle_mute.assert_called_once_with(self.DEVICES[0])
+        self.assertEqual(choose.call_count, 2)
+
+    @patch.object(audio_menu, "open_audio_controls")
+    def test_main_opens_audio_controls(self, open_audio_controls):
+        result, _, _ = self.run_main(audio_menu.rofi_menu.Choice(0, 3))
+        self.assertEqual(result, 0)
         open_audio_controls.assert_called_once_with()
 
-    @patch("audio_menu.choose", return_value="")
-    @patch("audio_menu.wofi_anchor.cursor_anchor", return_value=None)
-    def test_main_treats_cancellation_as_success(self, _cursor_anchor, _choose):
-        self.assertEqual(audio_menu.main(), 0)
+    def test_main_treats_cancellation_as_success(self):
+        self.assertEqual(self.run_main(audio_menu.rofi_menu.Choice(None, -1))[0], 0)
 
-    @patch("audio_menu.notify_error")
-    @patch("audio_menu.choose", side_effect=audio_menu.AudioMenuError("broken"))
-    @patch("audio_menu.wofi_anchor.cursor_anchor", return_value=None)
-    def test_main_reports_user_facing_errors(self, _cursor_anchor, _choose, notify_error):
-        self.assertEqual(audio_menu.main(), 1)
-        notify_error.assert_called_once_with("broken")
+    @patch.object(audio_menu, "notify_error")
+    def test_main_reports_user_facing_errors(self, notify_error):
+        with (
+            patch.object(audio_menu.wofi_anchor, "cursor_anchor", return_value=None),
+            patch.object(audio_menu, "audio_devices", side_effect=audio_menu.AudioMenuError("no")),
+        ):
+            self.assertEqual(audio_menu.main(), 1)
+        notify_error.assert_called_once_with("no")
 
     @patch("audio_menu.subprocess.run")
     def test_run_forces_stable_locale(self, run):

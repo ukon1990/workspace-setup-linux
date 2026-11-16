@@ -1,0 +1,26 @@
+/* Bar menus (scripts/rofi_menu.py): header line, list, hint line. */
+@import "shared.rasi"
+
+mainbox {
+    children: [ message, listview, textbox-hints ];
+}
+
+message {
+    padding: 4px 6px 2px 6px;
+}
+
+textbox {
+    markup: true;
+    text-color: @text;
+}
+
+listview {
+    spacing: 2px;
+    scrollbar: false;
+    fixed-height: false;
+}
+
+element {
+    padding: 9px 12px;
+    spacing: 12px;
+}

@@ -1,0 +1,32 @@
+{
+    "name": "fjord-light",
+    "display_name": "Fjord Light",
+    "mode": "light",
+    "icon": "\uf185",
+    "colors": {
+        "bg": "#eef2f6",
+        "surface": "#f8fafc",
+        "surface_high": "#e2e8ef",
+        "surface_higher": "#d0d9e3",
+        "outline": "#6b7a8c",
+        "text": "#1c2733",
+        "text_muted": "#4b5b6c",
+        "primary": "#2a6cb0",
+        "primary_container": "#2f6fb3",
+        "on_primary": "#ffffff",
+        "accent_container": "#b5532f",
+        "on_accent": "#ffffff",
+        "hypr_active_border": "#2a6cb0",
+        "hypr_inactive_border": "#a9b6c4",
+        "shadow": "#5a6878",
+        "groupbar_active": "#2f6fb3",
+        "groupbar_inactive": "#e2e8ef",
+        "groupbar_locked_active": "#e9c46a",
+        "groupbar_locked_inactive": "#f3ead0",
+        "groupbar_text_active": "#ffffff",
+        "groupbar_text_inactive": "#4b5b6c",
+        "groupbar_text_locked_active": "#3a2a00",
+        "groupbar_text_locked_inactive": "#6b4c0e",
+        "warn": "#9a5b00"
+    }
+}

@@ -20,10 +20,13 @@
         "hypr_inactive_border": "#3a4554",
         "shadow": "#050709",
         "groupbar_active": "#1e4c74",
-        "groupbar_inactive": "#10151e",
-        "groupbar_locked_active": "#2a6299",
-        "groupbar_locked_inactive": "#1a222e",
+        "groupbar_inactive": "#141a24",
+        "groupbar_locked_active": "#7a5a1e",
+        "groupbar_locked_inactive": "#221c10",
         "groupbar_text_active": "#e7f2ff",
-        "groupbar_text_inactive": "#9aa6b7"
+        "groupbar_text_inactive": "#9aa6b7",
+        "groupbar_text_locked_active": "#fff3da",
+        "groupbar_text_locked_inactive": "#c9b27c",
+        "warn": "#e0a458"
     }
 }

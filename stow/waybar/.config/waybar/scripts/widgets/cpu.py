@@ -1,9 +1,11 @@
 import os
+import re
 import time
 from pathlib import Path
 
 from .common import clamp, classes, perf_text, push_history, use_compact_perf_text
 from .processes import snapshot, top_cpu
+from .tooltip import esc, header, meter, ranking, render, table
 
 
 def temperature():
@@ -39,28 +41,26 @@ def cpu_module(state):
     model = next((r["model name"] for r in records if "model name" in r), "Unknown CPU")
     cores = {(r.get("physical id", "0"), r["core id"]) for r in records if "core id" in r}
     lines = [
-        model,
-        f"CPU usage: {usage:.1f}%" if previous else "CPU usage: Collecting…",
-        f"Cores / threads: {len(cores) if cores else 'Unknown'} / {len(records)}",
-        "Load (1 / 5 / 15 min): " + " / ".join(f"{v:.2f}" for v in os.getloadavg()),
-        f"Temperature: {temperature()}",
-        "",
-        "Top CPU processes (100% = one logical CPU):",
+        header("CPU", re.sub(r"\s+\d+-Core Processor$", "", model)),
+        f"<tt>{meter(usage)}  <b>{usage:.1f}%</b></tt>" if previous else "Collecting…",
+        *table(
+            [
+                ("Load", "  ".join(f"{v:.2f}" for v in os.getloadavg())),
+                ("Temp", esc(temperature())),
+                ("Cores", f"{len(cores) if cores else 'Unknown'} · {len(records)} threads"),
+            ]
+        ),
     ]
     now = time.monotonic()
     current = snapshot()
     old = state.get("process_sample")
-    if old and now > old["time"]:
-        rows = top_cpu(current, old["processes"], now - old["time"])
-        lines.extend(f"{name} [{pid}]: {value:.1f}%" for value, pid, name in rows)
-        if not rows:
-            lines.append("Collecting…")
-    else:
-        lines.append("Collecting…")
+    rows = top_cpu(current, old["processes"], now - old["time"]) if old and now > old["time"] else []
+    rows = [(name, f"{value:5.1f}") for value, _pid, name in rows if value >= 0.05]
+    lines += ranking("TOP PROCESSES", "% of one core", rows) if rows else ["", "Collecting…"]
     state["process_sample"] = {"time": now, "processes": current}
     compact = use_compact_perf_text(state)
     return {
-        "text": perf_text("", f"{usage:.0f}%", history, compact),
-        "tooltip": "\n".join(lines),
+        "text": perf_text("CPU", f"{usage:.0f}%", history, compact),
+        **render(lines),
         "class": classes("metric", "compact" if compact else None),
     }

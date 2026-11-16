@@ -1,0 +1,53 @@
+/* Shared shell for the launcher and window switcher.
+ * Colors come from the theme manager (generated colors.rasi). */
+@import "colors.rasi"
+
+* {
+    font: "Noto Sans Semi-Bold 11";
+    background-color: transparent;
+    text-color: @text;
+}
+
+window {
+    location: center;
+    anchor: center;
+    background-color: @bg;
+    border: 1px;
+    border-color: @outline-faint;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+mainbox {
+    spacing: 8px;
+}
+
+element {
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+element selected {
+    background-color: @primary-container;
+    text-color: @on-primary;
+}
+
+element-icon {
+    cursor: inherit;
+}
+
+element-text {
+    text-color: inherit;
+    vertical-align: 0.5;
+    cursor: inherit;
+}
+
+textbox-hints {
+    expand: false;
+    markup: true;
+    font: "Noto Sans Medium 9";
+    text-color: @muted;
+    border: 1px 0 0 0;
+    border-color: @outline-hair;
+    padding: 10px 6px 2px 6px;
+}

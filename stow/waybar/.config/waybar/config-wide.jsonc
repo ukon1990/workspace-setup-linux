@@ -1,0 +1,7 @@
+// Full-width ultrawide mode (5120 px): the same bar, pulled in over the centre
+// column so it sits where the eyes are. Chosen by scripts/launch.sh.
+{
+    "include": ["~/.config/waybar/bar.jsonc"],
+    "margin-left": 1285,
+    "margin-right": 1285
+}

@@ -7,3 +7,5 @@ else
   source "${${(%):-%x}:A:h}/.config/workspace-setup/zsh-init.zsh"
 fi
 # end workspace-setup
+
+. "$HOME/.local/share/../bin/env"

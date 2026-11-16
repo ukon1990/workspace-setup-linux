@@ -6,7 +6,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from .common import classes
+from .common import classes, icon
+from .tooltip import attention, esc, header, hint, render, table
 
 TOOLTIP_PROBLEM_LIMIT = 10
 KUBE_STATUS = Path.home() / "scripts" / "kube-status.sh"
@@ -83,74 +84,61 @@ def _load_status(state) -> dict:
     return payload
 
 
+K8S_ICON = icon("󰠳")
+
+
 def _bar_text(status: dict) -> str:
     if not status.get("available"):
-        return "󰠳 n/a"
+        return f"{K8S_ICON} n/a"
     pods = status.get("pods") or {}
-    workloads = status.get("workloads") or {}
-    attention = int(pods.get("attention") or 0)
-    text = (
-        f"󰠳 P {pods.get('ready', 0)}/{pods.get('active', 0)} "
-        f"W {workloads.get('ready', 0)}/{workloads.get('total', 0)}"
-    )
-    if attention:
-        text += f" !{attention}"
+    attention_count = int(pods.get("attention") or 0)
+    text = f"{K8S_ICON} {pods.get('ready', 0)}/{pods.get('active', 0)} pods"
+    if attention_count:
+        text += "  " + attention(f"● {attention_count} not ready")
     return text
 
 
-def _tooltip(status: dict) -> str:
-    context = status.get("context") or "(unknown)"
-    lines = [f"Context: {context}"]
+def _tooltip(status: dict) -> list[str]:
+    facts = [("Context", esc(status.get("context") or "(unknown)"))]
     if status.get("namespace_filter"):
-        lines.append(f"Namespace filter: {status['namespace_filter']}")
+        facts.append(("Namespace", esc(status["namespace_filter"])))
 
     if not status.get("available"):
-        lines.append("Status: unavailable")
-        for error in status.get("errors") or ["no cluster data"]:
-            lines.append(f"Error: {error}")
-        return "\n".join(lines)
+        errors = status.get("errors") or ["no cluster data"]
+        return [header("KUBERNETES", "Unavailable"), *table(facts), *(esc(e) for e in errors)]
 
     pods = status.get("pods") or {}
     workloads = status.get("workloads") or {}
-    lines.append(
-        f"Pods: {pods.get('ready', 0)}/{pods.get('active', 0)} ready "
-        f"(attention {pods.get('attention', 0)}, "
-        f"completed {pods.get('completed', 0)}, "
-        f"terminating {pods.get('terminating', 0)})"
-    )
-    lines.append(
-        f"Workloads: {workloads.get('ready', 0)}/{workloads.get('total', 0)} ready "
-        f"(attention {workloads.get('attention', 0)}, "
-        f"scaled down {workloads.get('scaled_down', 0)})"
-    )
+    lines = [
+        header(
+            "KUBERNETES",
+            f"{pods.get('ready', 0)}/{pods.get('active', 0)} pods · "
+            f"{workloads.get('ready', 0)}/{workloads.get('total', 0)} workloads",
+        ),
+        *table(facts),
+    ]
     if status.get("partial"):
-        lines.append("Partial results; some resource queries failed")
-        for error in status.get("errors") or []:
-            lines.append(f"Error: {error}")
+        lines.append(attention("Partial results; some resource queries failed"))
+        lines.extend(esc(error) for error in status.get("errors") or [])
 
-    for entry in status.get("namespaces") or []:
-        lines.append("")
-        lines.append(f"{entry.get('name')}:")
+    # Problems first; healthy namespaces fold into the last line.
+    namespaces = status.get("namespaces") or []
+    troubled = [entry for entry in namespaces if entry.get("problems")]
+    if troubled:
+        lines += ["", attention("NEEDS ATTENTION")]
+    for entry in troubled:
         npods = entry.get("pods") or {}
-        nwork = entry.get("workloads") or {}
+        problems = entry["problems"]
         lines.append(
-            f"  Pods {npods.get('ready', 0)}/{npods.get('active', 0)} "
-            f"| Workloads {nwork.get('ready', 0)}/{nwork.get('total', 0)} "
-            f"| Restarts {npods.get('restarts', 0)}"
+            f"<tt><b>{esc(entry.get('name'))}</b>  "
+            f"{npods.get('ready', 0)}/{npods.get('active', 0)} pods</tt>"
         )
-        problems = entry.get("problems") or []
-        if not problems:
-            lines.append("  Problems: none")
-            continue
-        shown = problems[:TOOLTIP_PROBLEM_LIMIT]
-        omitted = len(problems) - len(shown)
-        lines.append("  Problems:")
-        for problem in shown:
-            lines.append(f"    - {_format_problem(problem)}")
-        if omitted:
-            lines.append(f"    - …and {omitted} more")
-
-    return "\n".join(lines)
+        lines.extend(f"<tt>  {esc(_format_problem(p))}</tt>" for p in problems[:TOOLTIP_PROBLEM_LIMIT])
+        if len(problems) > TOOLTIP_PROBLEM_LIMIT:
+            lines.append(f"<tt>  …and {len(problems) - TOOLTIP_PROBLEM_LIMIT} more</tt>")
+    healthy = len(namespaces) - len(troubled)
+    lines += ["", hint(f"{healthy} healthy namespaces hidden · Click for full status")]
+    return lines
 
 
 def kubernetes_module(state):
@@ -158,12 +146,12 @@ def kubernetes_module(state):
     if not status.get("available"):
         return {
             "text": _bar_text(status),
-            "tooltip": _tooltip(status),
+            **render(_tooltip(status)),
             "class": classes("metric", "muted"),
         }
     warning = bool(status.get("warning"))
     return {
         "text": _bar_text(status),
-        "tooltip": _tooltip(status),
+        **render(_tooltip(status)),
         "class": classes("metric", "warning" if warning else None),
     }

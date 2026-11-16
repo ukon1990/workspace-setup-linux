@@ -1,0 +1,220 @@
+// Shared bar definition, included by config.jsonc and config-wide.jsonc.
+{
+    "layer": "top",
+    "position": "top",
+    "height": 34,
+    "spacing": 8,
+    "margin-top": 6,
+    // Side margins live in config.jsonc / config-wide.jsonc (see scripts/launch.sh).
+
+    "modules-left": [
+        "hyprland/workspaces",
+        "hyprland/window",
+        "custom/kubernetes",
+        "custom/game-mode"
+    ],
+    "modules-center": [
+        "custom/cava",
+        "custom/media",
+        "clock"
+    ],
+    "modules-right": [
+        "group/perf",
+        "group/controls",
+        "tray"
+    ],
+
+    // Islands: live numbers in one, toggles and menus in the other.
+    "group/perf": {
+        "orientation": "inherit",
+        "modules": [
+            "custom/perf-gpu",
+            "custom/perf-cpu",
+            "custom/perf-memory",
+            "custom/perf-network"
+            // "custom/perf-disk"
+        ]
+    },
+    "group/controls": {
+        "orientation": "inherit",
+        "modules": [
+            "custom/volume-mixer",
+            "custom/hyprsunset",
+            "custom/theme",
+            "idle_inhibitor",
+            "custom/window-size"
+        ]
+    },
+
+    // Shown only while game mode is on (Super+F9 or a running game).
+    "custom/game-mode": {
+        "exec": "[ -e \"$XDG_RUNTIME_DIR/hypr-game-mode\" ] && echo '{\"text\": \"<span size=\\\"128%\\\">󰊴</span>  Game mode\", \"tooltip\": \"Game mode is on: effects off, notifications held\\nClick to turn off\"}' || echo",
+        "return-type": "json",
+        "interval": "once",
+        "signal": 9,
+        "hide-empty-text": true,
+        "on-click": "hyprctl dispatch 'function() require(\"lua.gamemode\").toggle() end'"
+    },
+
+    "hyprland/workspaces": {
+        "all-outputs": false,
+        "active-only": false,
+        "disable-scroll": false,
+        "show-special": false,
+        "sort-by": "number",
+        "format": "{id} {windows}",
+        "persistent-workspaces": {
+            "DP-1": [1, 2, 3, 4, 5],
+            "HDMI-A-1": [6, 7, 8, 9, 10]
+        },
+        "workspace-taskbar": {
+            "enable": true,
+            "update-active-window": true,
+            "active-window-position": "first",
+            "icon-size": 14,
+            "icon-theme": [
+                "Papirus-Dark",
+                "Papirus",
+                "Adwaita"
+            ],
+            "format": "{icon}"
+        }
+    },
+
+    "hyprland/window": {
+        "icon": true,
+        "icon-size": 18,
+        "separate-outputs": false,
+        "format": "{}",
+        "rewrite": {
+            "(.*) - Vivaldi": "$1",
+            "(.*) - Cursor": "$1",
+            "(.*) - kitty": "$1"
+        }
+    },
+
+    "custom/kubernetes": {
+        "tooltip": true,
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py kubernetes",
+        "return-type": "json",
+        "interval": 30,
+        "on-click": "kitty --hold -e $HOME/scripts/kube-status.sh"
+    },
+
+    "clock": {
+        "format": "{:%a %d %b  %H:%M}",
+        "format-alt": "{:%Y-%m-%d}",
+        "tooltip-format": "<big>{:%A, %d %B %Y}</big>"
+    },
+
+    "custom/cava": {
+        "exec": "$HOME/.config/waybar/scripts/cava.sh",
+        "format": "{}",
+        "hide-empty-text": true,
+        "tooltip": false,
+        "on-click": "playerctl play-pause"
+    },
+
+    "custom/media": {
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py media",
+        "return-type": "json",
+        "interval": 1,
+        "on-click": "playerctl play-pause",
+        "on-click-right": "playerctl next",
+        "on-click-middle": "playerctl previous",
+        "on-scroll-up": "playerctl position 5+",
+        "on-scroll-down": "playerctl position 5-",
+        "tooltip": true
+    },
+
+    "custom/perf-gpu": {
+        "tooltip": true,
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py gpu",
+        "return-type": "json",
+        "interval": 3
+    },
+
+    "custom/perf-cpu": {
+        "tooltip": true,
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py cpu",
+        "return-type": "json",
+        "interval": 2
+    },
+
+    "custom/perf-memory": {
+        "tooltip": true,
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py memory",
+        "return-type": "json",
+        "interval": 3
+    },
+
+    "custom/perf-network": {
+        "tooltip": true,
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py network",
+        "return-type": "json",
+        "interval": 2
+    },
+
+    "custom/perf-disk": {
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py disk",
+        "return-type": "json",
+        "interval": 3
+    },
+
+    "custom/volume-mixer": {
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py volume",
+        "return-type": "json",
+        "interval": 1,
+        "on-click": "$HOME/.config/waybar/scripts/audio_menu.py",
+        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+        "on-scroll-up": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+",
+        "on-scroll-down": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"
+    },
+
+    "custom/window-size": {
+        "format": "<span size='128%'>󰩨</span>",
+        "tooltip": true,
+        "tooltip-format": "Resize focused window/group\nTiled by default; floating options included\nSuper+Shift+R: keyboard picker",
+        "on-click": "$HOME/.config/waybar/scripts/window_size.py menu"
+    },
+
+    "custom/theme": {
+        "exec": "$HOME/.config/themes/bin/theme widget",
+        "return-type": "json",
+        "interval": 5,
+        "on-click": "$HOME/.config/themes/bin/theme picker --quiet",
+        "on-click-right": "$HOME/.config/themes/bin/theme cycle --quiet",
+        "on-click-middle": "$HOME/.config/themes/bin/theme cycle --backward --quiet",
+        "on-scroll-up": "$HOME/.config/themes/bin/theme cycle --quiet",
+        "on-scroll-down": "$HOME/.config/themes/bin/theme cycle --backward --quiet",
+        "tooltip": true
+    },
+
+    "custom/hyprsunset": {
+        "exec": "$HOME/.config/waybar/scripts/status_widgets.py hyprsunset",
+        "return-type": "json",
+        "interval": 2,
+        "on-click": "$HOME/.config/waybar/scripts/status_widgets.py hyprsunset-toggle",
+        "on-click-right": "$HOME/.config/waybar/scripts/status_widgets.py hyprsunset-menu",
+        "on-click-middle": "$HOME/.config/waybar/scripts/status_widgets.py hyprsunset-reset",
+        "on-scroll-up": "$HOME/.config/waybar/scripts/status_widgets.py hyprsunset-adjust -250",
+        "on-scroll-down": "$HOME/.config/waybar/scripts/status_widgets.py hyprsunset-adjust +250",
+        "tooltip": true
+    },
+
+    "idle_inhibitor": {
+        "format": "{icon}",
+        "format-icons": {
+            "activated": "<span size='128%'>󰅶</span>",
+            "deactivated": "<span size='128%'>󰛊</span>"
+        },
+        "tooltip-format-activated": "Stay awake: on",
+        "tooltip-format-deactivated": "Stay awake: off",
+        "start-activated": false
+    },
+
+    "tray": {
+        "icon-size": 18,
+        "spacing": 10
+    }
+}

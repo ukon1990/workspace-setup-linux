@@ -1,6 +1,7 @@
 import re
 
-from .common import clamp, classes, run, use_compact_perf_text
+from .common import clamp, classes, icon, run, use_compact_perf_text
+from .tooltip import header, hint, meter, render
 
 
 def volume_bar(percent):
@@ -47,21 +48,28 @@ def volume_module(state):
         )
 
     if muted:
-        icon = "󰝟"
+        glyph = "󰝟"
         state_class = "metric muted"
     elif volume < 35:
-        icon = "󰕿"
+        glyph = "󰕿"
         state_class = "metric"
     elif volume < 70:
-        icon = "󰖀"
+        glyph = "󰖀"
         state_class = "metric"
     else:
-        icon = "󰕾"
+        glyph = "󰕾"
         state_class = "metric active"
 
     bar = volume_bar(volume)
     return {
-        "text": f"{icon}  {volume:.0f}%" if compact else f"{icon} {volume:3.0f}% {bar}",
-        "tooltip": f"{description}\nVolume: {volume:.0f}%\nLeft click: select device or open mixer\nRight click: mute\nScroll: adjust volume",
+        "text": f"{icon(glyph)} {volume:.0f}%" if compact else f"{icon(glyph)} {volume:3.0f}% {bar}",
+        **render(
+            [
+                header("VOLUME", description),
+                f"<tt>{meter(volume)}  <b>{volume:.0f}%</b></tt>" + ("  muted" if muted else ""),
+                "",
+                hint("Click devices and mixer · Right-click mute · Scroll adjust"),
+            ]
+        ),
         "class": classes(*state_class.split(), "compact" if compact else None),
     }

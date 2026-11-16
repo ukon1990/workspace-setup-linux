@@ -10,7 +10,7 @@
         "surface_higher": "#155866",
         "outline": "#839496",
         "text": "#eee8d5",
-        "text_muted": "#93a1a1",
+        "text_muted": "#a3b1b1",
         "primary": "#268bd2",
         "primary_container": "#1c5a86",
         "on_primary": "#fdf6e3",
@@ -20,10 +20,13 @@
         "hypr_inactive_border": "#586e75",
         "shadow": "#001015",
         "groupbar_active": "#1c5a86",
-        "groupbar_inactive": "#04222a",
-        "groupbar_locked_active": "#2a74ad",
-        "groupbar_locked_inactive": "#0a3c49",
+        "groupbar_inactive": "#073642",
+        "groupbar_locked_active": "#7a5c00",
+        "groupbar_locked_inactive": "#2a2a12",
         "groupbar_text_active": "#fdf6e3",
-        "groupbar_text_inactive": "#93a1a1"
+        "groupbar_text_inactive": "#a3b1b1",
+        "groupbar_text_locked_active": "#fdf6e3",
+        "groupbar_text_locked_inactive": "#c9b874",
+        "warn": "#b58900"
     }
 }

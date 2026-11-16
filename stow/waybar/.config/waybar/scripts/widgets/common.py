@@ -73,10 +73,16 @@ def use_compact_perf_text(state):
     return width is not None and width < PERF_FULL_WIDTH
 
 
-def perf_text(icon, primary, history, compact=False):
+def perf_text(label, primary, history, compact=False):
+    label = f'<span size="small" alpha="65%">{label}</span>'
     if compact:
-        return f"{icon}  {primary}"
-    return f"{icon} {primary} {sparkline(history)}"
+        return f"{label} {primary}"
+    return f"{label} {primary} {sparkline(history)}"
+
+
+def icon(glyph):
+    """Nerd-font glyphs render small next to the bar text; scale them up."""
+    return f'<span size="128%">{glyph}</span>'
 
 
 def classes(*names):

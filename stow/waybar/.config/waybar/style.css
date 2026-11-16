@@ -6,7 +6,7 @@
     border-radius: 0;
     min-height: 0;
     font-family: "Noto Sans", "Font Awesome 6 Free", FontAwesome, "Symbols Nerd Font Mono";
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
 }
 
@@ -15,188 +15,144 @@ window#waybar {
     color: @text;
 }
 
+/* Same box as the launcher and switcher: soft border, window radius. */
 tooltip {
-    background: @surface-high;
-    border: 1px solid @outline-strong;
-    border-radius: 14px;
-    color: @text;
+    background: @surface;
+    border: 1px solid @outline-faint;
+    border-radius: 10px;
 }
 
+tooltip label {
+    color: @text;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 8px;
+}
+
+/* Islands: one surface per group of related modules. */
 #workspaces,
 #window,
 #custom-kubernetes,
+#custom-game-mode,
 #clock,
 #custom-cava,
 #custom-media,
-#custom-perf-gpu,
-#custom-perf-cpu,
-#custom-perf-memory,
-#custom-perf-network,
-#custom-perf-disk,
-#custom-volume-mixer,
-#custom-window-size,
-#custom-theme,
-#custom-hyprsunset,
-#idle_inhibitor,
+#perf,
+#controls,
 #tray {
     background: @surface;
-    border: 1px solid @outline-soft;
-    border-radius: 18px;
-    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+    border: 1px solid @outline-faint;
+    border-radius: 10px;
     color: @text;
-    margin: 6px 0;
+    margin: 2px 0;
 }
 
+#window,
+#custom-kubernetes,
+#custom-game-mode,
+#custom-media,
+#tray {
+    padding: 0 12px;
+}
+
+#clock {
+    padding: 0 14px;
+}
+
+/* No focused window: hide the empty title island. */
+window#waybar.empty #window {
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+
+/* Workspaces: number plus the icons of the windows on it. */
 #workspaces {
-    padding: 4px 10px;
+    padding: 3px;
 }
 
 #workspaces button {
     background: transparent;
-    color: @text-faint;
-    border-radius: 12px;
-    margin: 0 2px;
-    padding: 0 3px;
-    min-width: 18px;
-}
-
-#workspaces button:hover {
-    background: transparent;
     color: @text-muted;
-}
-
-#workspaces button.active {
-    background: transparent;
-    color: @primary;
+    border-radius: 7px;
+    margin: 0 1px;
+    padding: 0 7px;
 }
 
 #workspaces button.empty {
     color: @text-faint;
 }
 
-#window {
-    padding: 0 16px;
+#workspaces button:hover {
+    background: @surface-higher;
     color: @text;
 }
 
-#clock,
-#custom-kubernetes,
-#custom-media,
-#custom-perf-gpu,
-#custom-perf-cpu,
-#custom-perf-memory,
-#custom-perf-network,
-#custom-perf-disk,
-#custom-volume-mixer,
-#custom-window-size,
-#custom-theme,
-#custom-hyprsunset,
-#idle_inhibitor,
-#tray {
-    padding: 0 14px;
+#workspaces button.active {
+    background: @primary-container;
+    color: @on-primary;
 }
 
-#custom-cava {
-    padding: 0 12px;
-    color: @primary;
-    font-family: "JetBrainsMono Nerd Font", "DejaVu Sans Mono", "Noto Sans Mono", monospace;
-    font-size: 14px;
-    letter-spacing: 2px;
-    min-width: 170px;
-    transition: color 0.18s ease, border-color 0.18s ease;
+#workspaces .workspace-label {
+    padding: 0 2px;
 }
 
-#custom-cava:hover {
-    border-color: @primary-border-strong;
+#workspaces .taskbar-window {
+    padding: 0 2px;
 }
 
-#custom-kubernetes,
-#custom-media,
-#custom-perf-gpu,
-#custom-perf-cpu,
-#custom-perf-memory,
-#custom-perf-network,
-#custom-perf-disk,
-#custom-volume-mixer,
-#custom-theme,
-#custom-hyprsunset,
-#idle_inhibitor {
-    font-family: "Noto Sans", "Symbols Nerd Font Mono", "Font Awesome 6 Free", FontAwesome;
-}
-
-#custom-kubernetes {
-    min-width: 120px;
-    color: @text;
-    transition: all 0.18s ease;
-}
-
-#custom-kubernetes.warning {
-    color: @on-accent;
-    background: @accent-container;
-    border-color: @outline-strong;
-}
-
-#custom-kubernetes.muted {
-    color: @text-muted-soft;
-}
-
+/* Modules inside an island carry no surface of their own. */
 #custom-perf-gpu,
 #custom-perf-cpu,
 #custom-perf-memory,
 #custom-perf-network,
 #custom-perf-disk {
-    min-width: 86px;
+    min-width: 62px;
+    padding: 0 11px;
 }
 
-#custom-perf-network {
-    min-width: 93px;
+#custom-volume-mixer,
+#custom-hyprsunset,
+#custom-theme,
+#idle_inhibitor,
+#custom-window-size {
+    padding: 0 9px;
 }
 
-#custom-perf-gpu.compact,
-#custom-perf-cpu.compact,
-#custom-perf-memory.compact,
-#custom-perf-network.compact,
-#custom-perf-disk.compact,
-#custom-volume-mixer.compact {
-    min-width: 58px;
-    padding: 0 5px;
+#custom-perf-cpu,
+#custom-perf-memory,
+#custom-perf-network,
+#custom-perf-disk {
+    border-left: 1px solid @outline-faint;
+    margin: 4px 0;
 }
 
+#custom-kubernetes,
+#custom-media,
+#custom-game-mode,
+#custom-volume-mixer,
+#custom-theme,
+#custom-hyprsunset,
+#custom-window-size,
 #idle_inhibitor {
-    min-width: 44px;
-    color: @text-muted;
+    font-family: "Noto Sans", "Symbols Nerd Font Mono", "Font Awesome 6 Free", FontAwesome;
 }
 
+/* State colors: blue means on or selected, amber (in the widget text) means attention. */
+#custom-game-mode,
+#custom-hyprsunset.active,
 #idle_inhibitor.activated {
-    color: @on-primary;
-    background: @primary-container;
-    border: 1px solid @primary-border-strong;
+    color: @primary;
 }
 
-#idle_inhibitor.deactivated {
-    color: @text-muted;
-}
-
-#custom-hyprsunset {
-    min-width: 86px;
-    color: @text-muted;
-    transition: all 0.18s ease;
-}
-
-#custom-hyprsunset.active {
-    color: @on-primary;
-    background: @primary-container;
-    border: 1px solid @primary-border-strong;
-}
-
-#custom-hyprsunset.muted {
-    color: @text-muted;
-}
-
-#custom-hyprsunset:hover {
+#custom-game-mode {
     border-color: @primary-border-strong;
 }
 
+#custom-hyprsunset.muted,
+#idle_inhibitor.deactivated,
+#custom-kubernetes.muted,
 #custom-perf-gpu.muted,
 #custom-perf-cpu.muted,
 #custom-perf-memory.muted,
@@ -206,29 +162,27 @@ tooltip {
     color: @text-muted-soft;
 }
 
-#custom-volume-mixer.active {
-    border-color: @primary-border-strong;
-}
-
-#custom-window-size {
-    color: @text;
-    min-width: 44px;
-    transition: all 0.18s ease;
-}
-
-#custom-window-size:hover {
-    border-color: @primary-border-strong;
+#custom-window-size:hover,
+#custom-theme:hover,
+#custom-hyprsunset:hover,
+#custom-volume-mixer:hover,
+#idle_inhibitor:hover {
     color: @primary;
 }
 
+#custom-cava {
+    padding: 0 12px;
+    color: @primary;
+    font-family: "JetBrainsMono Nerd Font", "DejaVu Sans Mono", "Noto Sans Mono", monospace;
+    letter-spacing: 2px;
+    min-width: 170px;
+}
+
 #custom-media {
-    color: @text;
     min-width: 280px;
-    transition: all 0.18s ease;
 }
 
 #custom-media.playing {
-    color: @text;
     border-color: @primary-border-strong;
 }
 
@@ -238,33 +192,11 @@ tooltip {
 
 #custom-media.idle,
 #custom-media.muted {
-    color: @text-muted-soft;
     min-width: 0;
     padding: 0;
     margin: 0;
     border: none;
     background: transparent;
-    box-shadow: none;
-}
-
-#custom-theme {
-    color: @text;
-    min-width: 150px;
-    transition: all 0.18s ease;
-}
-
-#custom-theme.theme-light {
-    color: @on-primary;
-    background: @primary-container;
-    border-color: @primary-border-strong;
-}
-
-#custom-theme:hover {
-    border-color: @primary-border-strong;
-}
-
-#tray {
-    padding-right: 16px;
 }
 
 #tray > .passive {
@@ -273,5 +205,5 @@ tooltip {
 
 #tray > .needs-attention {
     background: @accent-container;
-    border-radius: 10px;
+    border-radius: 7px;
 }

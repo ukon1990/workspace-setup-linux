@@ -2,15 +2,15 @@ local theme = require("theme")
 
 hl.config({
 	general = {
-		gaps_in = 5,
-		gaps_out = 20,
+		gaps_in = 4,
+		gaps_out = 10,
 		border_size = 2,
 		col = {
 			active_border = theme.active_border,
 			inactive_border = theme.inactive_border,
 		},
 		resize_on_border = false,
-		allow_tearing = false,
+		allow_tearing = true, -- only windows with the `immediate` rule tear (games)
 		layout = "dwindle",
 	},
 
@@ -41,13 +41,10 @@ hl.config({
 		preserve_split = true,
 	},
 
-	master = {
-		new_status = "master",
-	},
-
 	misc = {
 		font_family = "Noto Sans",
 		force_default_wallpaper = -1,
+		vrr = 2, -- fullscreen only
 		disable_hyprland_logo = false,
 	},
 
@@ -60,17 +57,20 @@ hl.config({
 		col = {
 			border_active = theme.active_border,
 			border_inactive = theme.inactive_border,
+			border_locked_active = theme.groupbar_locked_active,
+			border_locked_inactive = theme.inactive_border,
 		},
 		groupbar = {
 			enabled = true,
 			font_family = "Noto Sans",
-			font_size = 11,
+			font_size = 12,
 			font_weight_active = "bold",
 			font_weight_inactive = "medium",
-			gradients = false,
-			height = 20,
-			indicator_height = 3,
-			indicator_gap = 2,
+			gradients = true, -- filled tabs; the fill is the only state signal
+			height = 26,
+			indicator_height = 0,
+			indicator_gap = 0,
+			middle_click_close = true,
 			text_padding = 14,
 			text_offset = 1,
 			scrolling = true,
@@ -78,18 +78,20 @@ hl.config({
 			rounding_power = 3.0,
 			gradient_rounding = 8,
 			gradient_rounding_power = 3.0,
-			round_only_edges = true,
-			gradient_round_only_edges = true,
+			round_only_edges = false,
+			gradient_round_only_edges = false,
 			text_color = theme.groupbar_text_active,
 			text_color_inactive = theme.groupbar_text_inactive,
+			text_color_locked_active = theme.groupbar_text_locked_active,
+			text_color_locked_inactive = theme.groupbar_text_locked_inactive,
 			col = {
 				active = theme.groupbar_active,
 				inactive = theme.groupbar_inactive,
 				locked_active = theme.groupbar_locked_active,
 				locked_inactive = theme.groupbar_locked_inactive,
 			},
-			gaps_in = 3,
-			gaps_out = 4,
+			gaps_in = 4,
+			gaps_out = 3,
 			keep_upper_gap = false,
 			blur = true,
 		},

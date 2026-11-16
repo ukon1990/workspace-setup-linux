@@ -20,6 +20,9 @@ grim
 slurp
 swappy
 wofi
+rofi
+cliphist
+hyprpicker
 jq
 otf-font-awesome
 playerctl

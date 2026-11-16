@@ -1,0 +1,30 @@
+/* Bar menus as a grid of cards: generated preview on top, label below. */
+@import "menu.rasi"
+
+listview {
+    flow: horizontal;
+    fixed-columns: true;
+    spacing: 8px;
+}
+
+element {
+    orientation: vertical;
+    padding: 10px;
+    spacing: 8px;
+    border-radius: 10px;
+    border: 2px;
+    border-color: transparent;
+    background-color: @card;
+}
+
+element selected {
+    border-color: @primary;
+}
+
+element-icon {
+    horizontal-align: 0.5;
+}
+
+element-text {
+    horizontal-align: 0.5;
+}

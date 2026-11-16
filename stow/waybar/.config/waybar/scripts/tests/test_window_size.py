@@ -28,9 +28,9 @@ class WindowSizeTests(unittest.TestCase):
         }
 
     def test_all_requested_labels_resolve(self):
-        self.assertEqual(len(window_size.OPTIONS), 12)
-        self.assertEqual(window_size.OPTIONS[0].label, "Tiled · 1/4")
-        self.assertEqual(window_size.OPTIONS[6].label, "Float · 1/4")
+        self.assertEqual(
+            [label for label, _ in window_size.MENU_FRACTIONS], ["1/4", "1/3", "1/2", "2/3", "3/4"]
+        )
         tiled = window_size.resolve_option("2/4", self.window, self.monitor)
         floating = window_size.resolve_option("float:1/2", self.window, self.monitor)
         self.assertEqual(tiled.fraction, Fraction(1, 2))
@@ -64,23 +64,28 @@ class WindowSizeTests(unittest.TestCase):
         with self.assertRaisesRegex(window_size.WindowSizeError, "no usable work area"):
             window_size.calculate_floating_geometry(self.window, monitor, Fraction(1, 2))
 
-    def test_overlay_menu_is_centered_and_clamped_to_work_area(self):
-        command = window_size.menu_command("overlay", self.window, self.monitor)
-        self.assertNotIn("--global-coords", command)
-        self.assertEqual(command[command.index("--monitor") + 1], "DP-2")
-        self.assertEqual(command[command.index("--xoffset") + 1], "880")
-        self.assertEqual(command[command.index("--yoffset") + 1], "340")
-        self.assertEqual(command[command.index("--height") + 1], "520")
-        self.assertEqual(command[command.index("--define") + 1], "close_on_focus_loss=true")
-        self.assertIn("--insensitive", command)
+    def choose(self, mode, *choices):
+        """Run the panel with rofi answering ``choices`` in order."""
+        with (
+            patch("window_size.shutil.which", return_value="/usr/bin/rofi"),
+            patch("window_size.wofi_anchor.cursor_anchor", return_value="anchor") as anchor,
+            patch("window_size.size_icon", return_value=""),
+            patch("window_size.rofi_menu.pick", side_effect=list(choices)) as pick,
+        ):
+            return window_size.choose_option(mode, self.window, self.monitor), pick, anchor
 
-    @patch("window_size.wofi_anchor.wofi_menu_args")
-    def test_menu_delegates_anchoring_to_shared_wofi_anchor_helper(self, wofi_menu_args):
-        wofi_menu_args.return_value = ["--normal-window", "--define", "close_on_focus_loss=true"]
-        command = window_size.menu_command("menu", self.window, self.monitor)
-        wofi_menu_args.assert_called_once_with(window_size.MENU_WIDTH, window_size.MENU_HEIGHT)
-        self.assertEqual(command[-3:], ["--normal-window", "--define", "close_on_focus_loss=true"])
+    def test_bar_menu_opens_at_the_click_and_overlay_is_centred(self):
+        cancel = window_size.rofi_menu.Choice(None, window_size.rofi_menu.CANCEL)
+        _, pick, _ = self.choose("menu", cancel)
+        self.assertEqual(pick.call_args.kwargs["anchor"], "anchor")
+        _, pick, anchor = self.choose("overlay", cancel)
+        self.assertIsNone(pick.call_args.kwargs["anchor"])
+        anchor.assert_not_called()
 
+    def test_menu_names_the_group_it_resizes(self):
+        window = {**self.window, "title": "Editor", "grouped": ["0x1", "0x2", "0x3"]}
+        self.assertIn("group of 3 tabs", window_size.target_label(window))
+        self.assertNotIn("group", window_size.target_label({**window, "grouped": []}))
 
     @patch("window_size.run_json")
     def test_active_window_matches_monitor_id(self, run_json):
@@ -212,23 +217,25 @@ class WindowSizeTests(unittest.TestCase):
                 self.monitor,
             )
 
-    @patch("window_size.shutil.which", return_value="/usr/bin/wofi")
-    @patch("window_size.wofi_anchor.wofi_menu_args", return_value=["--location", "top_left"])
-    @patch("window_size.wofi_anchor.run_wofi_menu", return_value="")
-    def test_menu_cancellation_is_noop(self, _run_wofi_menu, _wofi_menu_args, _which):
-        self.assertIsNone(window_size.choose_option("menu", self.window, self.monitor))
+    def test_menu_cancellation_is_noop(self):
+        cancel = window_size.rofi_menu.Choice(None, window_size.rofi_menu.CANCEL)
+        self.assertIsNone(self.choose("menu", cancel)[0])
 
-    @patch("window_size.shutil.which", return_value="/usr/bin/wofi")
-    @patch("window_size.wofi_anchor.wofi_menu_args", return_value=["--location", "top_left"])
-    @patch("window_size.wofi_anchor.run_wofi_menu", return_value="Float · 2/3")
-    def test_menu_maps_selection(self, _run_wofi_menu, _wofi_menu_args, _which):
-        selected = window_size.choose_option("menu", self.window, self.monitor)
-        self.assertEqual(selected.fraction, Fraction(2, 3))
-        self.assertTrue(selected.floating)
+    def test_menu_maps_selection_mode_flip_and_digit_keys(self):
+        Choice = window_size.rofi_menu.Choice
+        picked, _, _ = self.choose("menu", Choice(3, 0))
+        self.assertEqual((picked.fraction, picked.floating), (Fraction(2, 3), False))
+        # Ctrl+Tab flips to float and reopens; the next Enter applies as floating.
+        picked, pick, _ = self.choose("menu", Choice(3, 1), Choice(3, 0))
+        self.assertEqual((picked.fraction, picked.floating), (Fraction(2, 3), True))
+        self.assertEqual(pick.call_count, 2)
+        # Digit keys pick directly: key 2 is "1", key 6 is "5".
+        picked, _, _ = self.choose("menu", Choice(None, 6))
+        self.assertEqual(picked.fraction, Fraction(3, 4))
 
     @patch("window_size.shutil.which", return_value=None)
-    def test_missing_wofi_is_explicit(self, _which):
-        with self.assertRaisesRegex(window_size.WindowSizeError, "wofi is not installed"):
+    def test_missing_rofi_is_explicit(self, _which):
+        with self.assertRaisesRegex(window_size.WindowSizeError, "rofi is not installed"):
             window_size.choose_option("menu", self.window, self.monitor)
 
     def test_invalid_window_address_is_rejected(self):

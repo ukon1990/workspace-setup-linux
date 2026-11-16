@@ -1,0 +1,32 @@
+{
+    "name": "tidepool",
+    "display_name": "Tidepool",
+    "mode": "dark",
+    "icon": "\uf186",
+    "colors": {
+        "bg": "#071417",
+        "surface": "#0d1e22",
+        "surface_high": "#14292e",
+        "surface_higher": "#1e383e",
+        "outline": "#6f9299",
+        "text": "#d9eef0",
+        "text_muted": "#92b0b5",
+        "primary": "#45c4cc",
+        "primary_container": "#0f5158",
+        "on_primary": "#e3fbfd",
+        "accent_container": "#1f7f88",
+        "on_accent": "#ffffff",
+        "hypr_active_border": "#45c4cc",
+        "hypr_inactive_border": "#2a4248",
+        "shadow": "#020809",
+        "groupbar_active": "#0f5158",
+        "groupbar_inactive": "#0d1e22",
+        "groupbar_locked_active": "#7a5a1e",
+        "groupbar_locked_inactive": "#221c10",
+        "groupbar_text_active": "#e3fbfd",
+        "groupbar_text_inactive": "#92b0b5",
+        "groupbar_text_locked_active": "#fff3da",
+        "groupbar_text_locked_inactive": "#c9b27c",
+        "warn": "#e6a95c"
+    }
+}

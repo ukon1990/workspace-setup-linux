@@ -4,3 +4,4 @@ waybar
 lxqt
 themes
 cursor
+rofi

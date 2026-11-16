@@ -6,9 +6,11 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / "scripts"))
+import rofi_menu  # noqa: E402
 import wofi_anchor  # noqa: E402
 
-from .common import run
+from .common import icon, run
+from .tooltip import esc, header, hint, render, table
 
 HYPRSUNSET_CONF = Path.home() / ".config" / "hypr" / "hyprsunset.conf"
 HYPRSUNSET_MIN_K = 1000
@@ -18,8 +20,7 @@ HYPRSUNSET_DEFAULT_K = 4500
 HYPRSUNSET_DEFAULT_GAMMA = 0.9
 HYPRSUNSET_SCHED_START = "# >>> widget:schedule"
 HYPRSUNSET_SCHED_END = "# <<< widget:schedule"
-MENU_WIDTH = 280
-MENU_HEIGHT = 320
+MENU_WIDTH = 440
 
 
 def hyprsunset_state(state):
@@ -140,12 +141,12 @@ def hyprsunset_module(state):
     start, end, night_temp, night_gamma = _read_schedule()
 
     if data["enabled"]:
-        icon = "󰖙"
-        text = f"{icon} {data['temperature']}K"
+        glyph = "󰖙"
+        text = f"{icon(glyph)} {data['temperature']}K"
         klass = "active"
     else:
-        icon = "󰖚"
-        text = f"{icon} off"
+        glyph = "󰖚"
+        text = f"{icon(glyph)} off"
         klass = "muted"
 
     try:
@@ -153,28 +154,20 @@ def hyprsunset_module(state):
     except Exception:
         now = None
 
-    tooltip_lines = []
-    if data["enabled"]:
-        tooltip_lines.append(f"Sunset: on ({data['temperature']} K)")
-    else:
-        tooltip_lines.append("Sunset: off (identity)")
-
-    tooltip_lines.append(
-        f"Schedule: {start} \u2192 {end}  ({night_temp} K, \u03b3 {night_gamma:g})"
-    )
+    rows = [("Schedule", f"{start} \u2192 {end} · {night_temp} K, \u03b3 {night_gamma:g}")]
     if now is not None:
         label, hhmm = _next_transition(now, start, end)
-        tooltip_lines.append(f"Next: {label} at {hhmm}")
-
-    tooltip_lines.append("")
-    tooltip_lines.append("Left click: toggle on/off")
-    tooltip_lines.append("Right click: preset menu / edit schedule")
-    tooltip_lines.append("Middle click: reset to current profile")
-    tooltip_lines.append("Scroll: warmer \u2195 cooler (\u00b1250 K)")
+        rows.append(("Next", f"{esc(label)} at {hhmm}"))
+    tooltip_lines = [
+        header("NIGHT LIGHT", f"On · {data['temperature']} K" if data["enabled"] else "Off"),
+        *table(rows),
+        "",
+        hint("Click toggle · Right-click presets · Middle-click reset · Scroll \u00b1250 K"),
+    ]
 
     return {
         "text": text,
-        "tooltip": "\n".join(tooltip_lines),
+        **render(tooltip_lines),
         "class": klass,
         "alt": "active" if data["enabled"] else "muted",
     }
@@ -239,98 +232,129 @@ def _apply_preset(state, choice):
     state["hyprsunset"] = data
 
 
-def hyprsunset_menu(state, _argv):
-    if not shutil.which("wofi"):
-        return
-    entries = [
-        "2500K",
-        "3500K",
-        "4500K",
-        "5500K",
-        "6500K",
-        "off",
-        "Edit schedule\u2026",
+# Preset temperatures with the tint each gives the screen (for the menu chips).
+PRESETS = (
+    (2500, "#ffa148"),
+    (3500, "#ffc489"),
+    (4500, "#ffdbba"),
+    (5500, "#ffecdf"),
+    (6500, "#fff9fd"),
+)
+SCHEDULE_FIELDS = (
+    ("Night starts", "24-hour HH:MM"),
+    ("Night ends", "24-hour HH:MM"),
+    ("Night temperature", f"{HYPRSUNSET_MIN_K}\u2013{HYPRSUNSET_MAX_K} K"),
+    ("Brightness (gamma)", "0.1\u20132.0"),
+)
+
+
+def _menu_rows():
+    stroke = rofi_menu.colors()["muted"]
+    line = f'fill="none" stroke="{stroke}" stroke-width="4" stroke-linecap="round"'
+    rows = [
+        rofi_menu.Row(
+            f"<b>{kelvin}</b>",
+            rofi_menu.svg_icon(f"night-{kelvin}", f'<circle cx="32" cy="32" r="24" fill="{tint}"/>', 64),
+        )
+        for kelvin, tint in PRESETS
     ]
-    choice = wofi_anchor.run_wofi_menu(
-        [
-            "wofi",
-            "--dmenu",
-            "--prompt",
-            "Sunset",
-            "--lines",
-            str(len(entries)),
-            "--no-custom-entry",
-            *wofi_anchor.wofi_menu_args(MENU_WIDTH, MENU_HEIGHT),
-        ],
-        input_text="\n".join(entries),
+    extras = (
+        ("Off", "off", f'<circle cx="32" cy="32" r="22" {line} stroke-dasharray="7 7"/>'),
+        (
+            "Schedule",
+            "schedule",
+            f'<circle cx="32" cy="32" r="22" {line}/><path d="M32 18v14l9 6" {line}/>',
+        ),
+        (
+            "Auto",
+            "follow",
+            f'<path d="M46 22a18 18 0 1 0 4 14" {line}/><path d="M48 10v13H35" {line}/>',
+        ),
     )
-    if not choice:
+    rows += [rofi_menu.Row(name, rofi_menu.svg_icon(f"night-{key}", body, 64)) for name, key, body in extras]
+    return rows
+
+
+def hyprsunset_menu(state, _argv):
+    """Right-click panel: pick a tint, turn it off, edit or return to the schedule."""
+    if not shutil.which("rofi"):
         return
-    if choice.startswith("Edit schedule"):
+    data = hyprsunset_state(state)
+    start, end, night_temp, _gamma = _read_schedule()
+    kelvins = [kelvin for kelvin, _ in PRESETS]
+    status = f"On \u00b7 {data['temperature']} K" if data["enabled"] else "Off"
+    selected = kelvins.index(data["temperature"]) if data["enabled"] and data["temperature"] in kelvins else len(kelvins)
+    choice = rofi_menu.pick(
+        _menu_rows(),
+        header=(
+            f"{rofi_menu.label('NIGHT LIGHT')}  <b>{status}</b>"
+            f"      <span alpha='65%'>Night {start} \u2192 {end}</span>"
+        ),
+        hint=rofi_menu.hints(("arrows", "select"), ("Enter", "apply"), ("Esc", "close")),
+        selected=selected,
+        width=MENU_WIDTH,
+        columns=4,
+        icon_size=44,
+        anchor=wofi_anchor.cursor_anchor(),
+    )
+    if choice.index is None:
+        return
+    if choice.index < len(kelvins):
+        _apply_preset(state, f"{kelvins[choice.index]}K")
+    elif choice.index == len(kelvins):
+        _apply_preset(state, "off")
+    elif choice.index == len(kelvins) + 1:
         hyprsunset_schedule(state, [])
-        return
-    _apply_preset(state, choice)
+    else:
+        hyprsunset_reset(state, [])
+
+
+def _parse_schedule_field(index, text):
+    """Validate one typed schedule value; None when it is out of range."""
+    if index < 2:
+        return _parse_hhmm(text)
+    try:
+        number = float(text.lower().rstrip("k").strip())
+    except ValueError:
+        return None
+    if index == 2:
+        return int(number) if HYPRSUNSET_MIN_K <= number <= HYPRSUNSET_MAX_K else None
+    return number if 0.1 <= number <= 2.0 else None
 
 
 def hyprsunset_schedule(state, _argv):
-    start, end, night_temp, night_gamma = _read_schedule()
-
-    if not shutil.which("yad"):
-        sys.stderr.write(
-            "status_widgets.py hyprsunset-schedule: `yad` not installed. Run: sudo pacman -S yad\n"
+    """Edit the night schedule in the panel: pick a field, type a value, Enter saves."""
+    values = list(_read_schedule())
+    saved = list(values)
+    selected = 0
+    title = f"{rofi_menu.label('NIGHT LIGHT')}  <b>Schedule</b>"
+    while True:
+        shown = [values[0], values[1], f"{values[2]} K", f"{values[3]:g}"]
+        choice = rofi_menu.pick(
+            [
+                rofi_menu.Row(f"{name}   <span alpha='70%'><tt>{value}</tt></span>")
+                for (name, _), value in zip(SCHEDULE_FIELDS, shown)
+            ],
+            header=f"{title}      <span alpha='65%'>Applies every day</span>",
+            hint=rofi_menu.hints(("Enter", "edit"), ("Esc", "done")),
+            selected=selected,
+            width=MENU_WIDTH,
         )
+        if choice.index is None:
+            break
+        selected = choice.index
+        name, allowed = SCHEDULE_FIELDS[selected]
+        hint = f"{allowed}  \u00b7  Enter saves  \u00b7  Esc back"
+        while (text := rofi_menu.ask(name, f"{values[selected]:g}" if selected == 3 else str(values[selected]), header=title, hint=hint, width=MENU_WIDTH)) is not None:
+            value = _parse_schedule_field(selected, text)
+            if value is not None:
+                values[selected] = value
+                break
+            hint = f"Not valid. Allowed: {allowed}"
+
+    if values == saved:
         return
-
-    fields = [
-        "--field=Night starts (HH:MM)",
-        "--field=Night ends (HH:MM)",
-        "--field=Night temperature (K):NUM",
-        "--field=Night gamma (0.1..2.0):NUM",
-    ]
-    values = [
-        start,
-        end,
-        f"{int(night_temp)}!{HYPRSUNSET_MIN_K}..{HYPRSUNSET_MAX_K}!{HYPRSUNSET_STEP_K}",
-        f"{float(night_gamma):g}!0.1..2.0!0.05",
-    ]
-    result = subprocess.run(
-        [
-            "yad",
-            "--form",
-            "--title=Hyprsunset Schedule",
-            "--center",
-            "--width=360",
-            "--separator=|",
-            *fields,
-            *values,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        return
-
-    parts = result.stdout.rstrip("\n").split("|")
-    if len(parts) < 4:
-        return
-
-    new_start = _parse_hhmm(parts[0]) or start
-    new_end = _parse_hhmm(parts[1]) or end
-    try:
-        new_temp = int(float(parts[2]))
-    except ValueError:
-        new_temp = night_temp
-    try:
-        new_gamma = float(parts[3])
-    except ValueError:
-        new_gamma = night_gamma
-
-    new_temp = max(HYPRSUNSET_MIN_K, min(HYPRSUNSET_MAX_K, new_temp))
-    new_gamma = max(0.1, min(2.0, new_gamma))
-
-    _write_schedule(new_start, new_end, new_temp, new_gamma)
-
+    _write_schedule(*values)
     subprocess.run(["pkill", "-x", "hyprsunset"], check=False)
     subprocess.Popen(
         ["hyprsunset"],

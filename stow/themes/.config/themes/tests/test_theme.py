@@ -55,12 +55,21 @@ class ThemeTests(unittest.TestCase):
         self.assertIn("color: #ffffff", style)
         self.assertIn("border-color: #ff8800", style)
 
+    def test_rofi_colors_and_optional_tokens(self):
+        colors = theme.render_rofi(self.palette)
+        self.assertIn("primary-container: #663300;", colors)
+        self.assertIn("bg: #111111f0;", colors)
+        # Palettes without the optional tokens fall back to sensible defaults.
+        self.assertEqual(theme.warn_color(self.palette), "#e0a458")
+        self.assertIn('groupbar_text_locked_active = "rgba(ffffffff)"', theme.render_hypr(self.palette))
+
     def test_apply_theme_writes_wofi_style(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             paths = {
                 "HYPR_THEME_FILE": root / "hypr" / "theme.lua",
                 "HYPRLOCK_COLORS_FILE": root / "hypr" / "hyprlock-colors.conf",
+                "ROFI_COLORS_FILE": root / "rofi" / "colors.rasi",
                 "WAYBAR_COLORS_FILE": root / "waybar" / "colors.css",
                 "WOFI_STYLE_FILE": root / "wofi" / "style.css",
                 "MAKO_CONFIG_FILE": root / "mako" / "config",
@@ -137,6 +146,30 @@ class ThemeTests(unittest.TestCase):
                 self.assertRaisesRegex(SystemExit, "wallpaper file not found"),
             ):
                 theme.wallpaper_targets()
+
+    def system_appearance_calls(self, mode, gtk_theme):
+        palette = theme.Palette("t", "T", mode, "", self.palette.colors)
+        answers = lambda cmd: (True, f"'{gtk_theme}'" if cmd[1] == "get" else "")  # noqa: E731
+        with (
+            patch.object(theme.shutil, "which", return_value="/usr/bin/gsettings"),
+            patch.object(theme, "run", side_effect=answers) as run,
+        ):
+            theme.apply_system_appearance(palette, quiet=True)
+        return [call.args[0][3:] for call in run.call_args_list if call.args[0][1] == "set"]
+
+    def test_system_appearance_follows_the_palette_mode(self):
+        self.assertEqual(
+            self.system_appearance_calls("light", "Adwaita-dark"),
+            [["color-scheme", "prefer-light"], ["gtk-theme", "Adwaita"]],
+        )
+        self.assertEqual(
+            self.system_appearance_calls("dark", "Adwaita"),
+            [["color-scheme", "prefer-dark"], ["gtk-theme", "Adwaita-dark"]],
+        )
+        # A custom GTK theme is not replaced.
+        self.assertEqual(
+            self.system_appearance_calls("dark", "Nordic"), [["color-scheme", "prefer-dark"]]
+        )
 
     def test_apply_wallpapers_uses_hyprpaper_ipc(self):
         targets = {"": Path("/tmp/default.jpg"), "DP-1": Path("/tmp/display.jpg")}

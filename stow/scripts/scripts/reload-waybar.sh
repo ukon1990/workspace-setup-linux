@@ -41,7 +41,7 @@ if [[ -z "${WAYLAND_DISPLAY:-}" || -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; the
     exit 1
 fi
 
-pkill -x waybar || true
-nohup waybar >/dev/null 2>&1 &
+# launch.sh restarts Waybar with the config matching the monitor width.
+nohup "$HOME/.config/waybar/scripts/launch.sh" >/dev/null 2>&1 &
 
 echo "Waybar reloaded."

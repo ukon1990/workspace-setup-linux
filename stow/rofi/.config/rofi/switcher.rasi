@@ -1,0 +1,52 @@
+/* Super+Tab: one strip of cards, most recent window first. */
+@import "shared.rasi"
+
+configuration {
+    show-icons: true;
+}
+
+window {
+    width: 1258px;
+    padding: 14px 16px;
+}
+
+mainbox {
+    spacing: 12px;
+    children: [ listview, textbox-hints ];
+}
+
+listview {
+    columns: 6;
+    lines: 1;
+    flow: horizontal;
+    fixed-columns: true;
+    spacing: 10px;
+    scrollbar: false;
+}
+
+element {
+    orientation: vertical;
+    padding: 16px 12px;
+    spacing: 10px;
+    border-radius: 10px;
+    border: 2px;
+    border-color: transparent;
+    background-color: @card;
+}
+
+element selected {
+    border-color: @primary;
+}
+
+element-icon {
+    size: 64px;
+    horizontal-align: 0.5;
+}
+
+element-text {
+    horizontal-align: 0.5;
+}
+
+textbox-hints {
+    content: "<b>Tab</b> next     <b>Shift Tab</b> back     <b>release Super</b> switch     <b>Esc</b> cancel";
+}

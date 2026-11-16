@@ -1,6 +1,7 @@
 import csv
 
 from .common import classes, perf_text, push_history, run, use_compact_perf_text
+from .tooltip import header, meter, render, table
 
 
 def number(value):
@@ -8,6 +9,11 @@ def number(value):
         return float(value)
     except ValueError:
         return None
+
+
+def shown(raw, unit):
+    value = number(raw)
+    return f"{value:g}{unit}" if value is not None else "Unavailable"
 
 
 def gpu_module(state):
@@ -24,7 +30,7 @@ def gpu_module(state):
     if not rows:
         history = push_history(state, "gpu_history", 0)
         return {
-            "text": perf_text("󰢮", "n/a", history, compact),
+            "text": perf_text("GPU", "n/a", history, compact),
             "tooltip": "GPU metrics unavailable right now",
             "class": classes("metric", "muted", "compact" if compact else None),
         }
@@ -32,27 +38,19 @@ def gpu_module(state):
     for name, util, used, total, temp, power, limit in rows:
         if lines:
             lines.append("")
-        lines.append(name)
-        for label, raw, unit in [
-            ("GPU usage", util, "%"),
-            ("Temperature", temp, " °C"),
-            ("Power draw", power, " W"),
-            ("Power limit", limit, " W"),
-        ]:
-            value = number(raw)
-            lines.append(
-                f"{label}: {value:g}{unit}" if value is not None else f"{label}: Unavailable"
-            )
-        mem_used, mem_total = number(used), number(total)
-        lines.append(
-            f"VRAM: {mem_used:g} / {mem_total:g} MiB ({mem_used / mem_total * 100:.1f}%)"
-            if mem_used is not None and mem_total and mem_total > 0
-            else "VRAM: Unavailable"
-        )
+        load, mem_used, mem_total = number(util), number(used), number(total)
+        facts = [("Load", f"{meter(load)}  <b>{load:g}%</b>" if load is not None else "Unavailable")]
+        if mem_used is not None and mem_total:
+            vram = mem_used / mem_total * 100
+            facts += [("VRAM", f"{meter(vram)}  {vram:.1f}%"), ("", f"{mem_used:g} / {mem_total:g} MiB")]
+        else:
+            facts.append(("VRAM", "Unavailable"))
+        facts += [("Temp", shown(temp, " °C")), ("Power", f"{shown(power, '')} / {shown(limit, ' W')}")]
+        lines += [header("GPU", name), *table(facts)]
     usage = number(rows[0][1])
     history = push_history(state, "gpu_history", usage or 0)
     return {
-        "text": perf_text("󰢮", f"{usage:.0f}%" if usage is not None else "n/a", history, compact),
-        "tooltip": "\n".join(lines),
+        "text": perf_text("GPU", f"{usage:.0f}%" if usage is not None else "n/a", history, compact),
+        **render(lines),
         "class": classes("metric", "compact" if compact else None),
     }

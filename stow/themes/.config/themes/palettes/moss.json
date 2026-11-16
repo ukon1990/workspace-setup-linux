@@ -1,0 +1,32 @@
+{
+    "name": "moss",
+    "display_name": "Moss",
+    "mode": "dark",
+    "icon": "\uf186",
+    "colors": {
+        "bg": "#0c110d",
+        "surface": "#141b15",
+        "surface_high": "#1c261d",
+        "surface_higher": "#283528",
+        "outline": "#7f947f",
+        "text": "#e1ebdd",
+        "text_muted": "#a0b09c",
+        "primary": "#8cc27a",
+        "primary_container": "#2c5226",
+        "on_primary": "#edf8e8",
+        "accent_container": "#4d7f41",
+        "on_accent": "#ffffff",
+        "hypr_active_border": "#8cc27a",
+        "hypr_inactive_border": "#36443a",
+        "shadow": "#050805",
+        "groupbar_active": "#2c5226",
+        "groupbar_inactive": "#141b15",
+        "groupbar_locked_active": "#7a5a1e",
+        "groupbar_locked_inactive": "#221c10",
+        "groupbar_text_active": "#edf8e8",
+        "groupbar_text_inactive": "#a0b09c",
+        "groupbar_text_locked_active": "#fff3da",
+        "groupbar_text_locked_inactive": "#c9b27c",
+        "warn": "#e0a458"
+    }
+}
