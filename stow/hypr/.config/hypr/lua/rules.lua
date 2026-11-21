@@ -35,25 +35,12 @@ hl.window_rule({
 -- Wine/Proton windows share the class steam_app_*; launchers are told apart by title.
 local LAUNCHER_TITLE = "^(Battle\\.net.*|Steam.*|Lutris.*)$"
 
-hl.window_rule({
-	name = "launchers-on-slot-4",
-	match = { class = "^(steam|net\\.lutris\\.Lutris)$" },
-	workspace = "4",
-})
-
-hl.window_rule({
-	name = "wine-launchers-on-slot-4",
-	match = { class = "^steam_app_.*$", title = LAUNCHER_TITLE },
-	workspace = "4",
-})
-
--- Games: own slot as a normal tile (bar stays visible, other windows can sit
--- beside it), never pulled into a tab group automatically. Super+F goes true
--- fullscreen, which is also when tearing (immediate) and VRR apply.
+-- Games: normal tile on the current workspace (bar stays visible, other windows
+-- can sit beside it), never pulled into a tab group automatically. Super+F goes
+-- true fullscreen, which is also when tearing (immediate) and VRR apply.
 hl.window_rule({
 	name = "games",
 	match = { class = "^(steam_app_.*|gamescope)$", title = "negative:" .. LAUNCHER_TITLE },
-	workspace = "5",
 	group = "barred",
 	content = "game",
 	immediate = true,
@@ -75,6 +62,7 @@ hl.layer_rule({
 	match = { namespace = "^rofi$" },
 	blur = true,
 	ignore_alpha = 0.5,
-	dim_around = true,
+	-- No dim_around: the switcher respawns rofi on every Tab, and each new dim
+	-- fades in from zero, blinking the whole screen bright.
 	no_anim = true, -- the switcher redraws on every Tab
 })
